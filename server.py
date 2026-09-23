@@ -15,6 +15,8 @@ rooms = {}
 
 
 def pick(topic):
+    if len(topic["questions"]) < 10:
+        raise ValueError("Este tema ainda não possui 10 questões válidas.")
     selected = random.sample(topic["questions"], 10)
     result = []
     for q in selected:
@@ -220,6 +222,10 @@ async def ws_endpoint(ws: WebSocket):
                     DATA["topics"][0],
                 )
 
+                if len(topic["questions"]) < 10:
+                    await send(ws, {"type": "error", "message": "Este tema ainda não possui 10 questões válidas para iniciar uma partida."})
+                    continue
+
                 room_id = make_code()
                 room = {
                     "id": room_id,
@@ -282,7 +288,8 @@ async def ws_endpoint(ws: WebSocket):
                         index = int(message.get("index"))
                     except (TypeError, ValueError):
                         continue
-                    if 0 <= index <= 3:
+                    option_count = len(room["questions"][room["current"]]["options"])
+                    if 0 <= index < option_count:
                         player["answer"] = index
                         player["answered"] = True
                         await broadcast(room)
