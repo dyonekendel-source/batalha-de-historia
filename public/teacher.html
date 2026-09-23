@@ -1,4 +1,4 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card"><div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span class="pill">10 questões</span></div><div id="topicPicker" class="topic-picker" aria-label="Seleção de tema"></div><div id="topicSelected" class="topic-selected">Tema selecionado: <span>—</span></div><div class="rules"><span>🎯 1.000 pontos por acerto</span><span>🧑‍🏫 Professor controla o ritmo</span><span>🔀 Questões e alternativas aleatórias</span></div><button id="create" class="btn primary wide" disabled>Conectando…</button><div id="connectionStatus" class="student-msg">Conectando ao servidor…</div><div id="topicHint" class="student-msg">Selecione um tema com pelo menos 10 questões válidas.</div></section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="/static/style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card"><div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span class="pill">10 questões</span></div><div id="topicPicker" class="topic-picker" aria-label="Seleção de tema"></div><div id="topicSelected" class="topic-selected">Tema selecionado: <span>—</span></div><div class="rules"><span>🎯 1.000 pontos por acerto</span><span>🧑‍🏫 Professor controla o ritmo</span><span>🔀 Questões e alternativas aleatórias</span></div><button id="create" class="btn primary wide" disabled>Conectando…</button><div id="connectionStatus" class="student-msg">Conectando ao servidor…</div><div id="topicHint" class="student-msg">Selecione um tema com pelo menos 10 questões válidas.</div></section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
 const $=id=>document.getElementById(id);
 let ws=null, room=null, wsReady=false, topicsLoaded=false, reconnectTimer=null;
 
@@ -64,11 +64,15 @@ function updateTopicHint(topics){const cur=topics.find(t=>String(t.id)===String(
 function selectTopic(id, topics){const cur=topics.find(t=>String(t.id)===String(id));if(!cur||cur.question_count<10)return;selectedTopicId=String(cur.id);document.querySelectorAll('.topic-btn').forEach(b=>b.classList.toggle('selected',b.dataset.id===selectedTopicId));$('topicSelected').innerHTML=`Tema selecionado: <span>${esc(cur.name)}</span>`;updateTopicHint(topics);$('create').disabled=!(wsReady&&topicsLoaded&&selectedTopicId);if(wsReady)$('create').textContent='Criar sala';}
 function renderTopicPicker(topics){
   const groups=[['general','HISTÓRIA GERAL'],['brazil','HISTÓRIA DO BRASIL']];
-  $('topicPicker').innerHTML=groups.map(([cat,label])=>{
-    const items=topics.filter(t=>t.category===cat);
-    return `<section class="topic-group"><h3>${label}</h3><div class="topic-grid">${items.map(t=>`<button type="button" class="topic-btn" data-id="${esc(t.id)}" ${t.question_count<10?'disabled':''}><strong>${esc(t.name)}</strong><span>${t.question_count} questões${t.question_count<10?' • indisponível':''}</span></button>`).join('')}</div></section>`;
+  const visibleTopics=topics.filter(t=>String(t.name).trim()!=='Revoluções Atlânticas');
+  $('topicPicker').innerHTML=groups.map(([cat,label],index)=>{
+    const items=visibleTopics.filter(t=>t.category===cat);
+    return `<details class="topic-accordion" ${index===0?'open':''}>
+      <summary><span>${label}</span><small>${items.filter(t=>t.question_count>=10).length} temas disponíveis</small></summary>
+      <div class="topic-grid">${items.map(t=>`<button type="button" class="topic-btn" data-id="${esc(t.id)}" ${t.question_count<10?'disabled':''}><strong>${esc(t.name)}</strong><span>${t.question_count} questões${t.question_count<10?' • indisponível':''}</span></button>`).join('')}</div>
+    </details>`;
   }).join('');
-  $('topicPicker').querySelectorAll('.topic-btn').forEach(btn=>btn.addEventListener('click',()=>selectTopic(btn.dataset.id,topics)));
+  $('topicPicker').querySelectorAll('.topic-btn').forEach(btn=>btn.addEventListener('click',()=>selectTopic(btn.dataset.id,visibleTopics)));
 }
 
 
@@ -78,7 +82,7 @@ async function load(){
     if(!r.ok)throw new Error('topics');
     const topics=await r.json();
     renderTopicPicker(topics);
-    const firstAvailable=topics.find(t=>t.question_count>=10);
+    const firstAvailable=topics.find(t=>t.question_count>=10 && String(t.name).trim()!=='Revoluções Atlânticas');
     if(firstAvailable) selectTopic(firstAvailable.id,topics);
     topicsLoaded=true;
     updateTopicHint(topics);
