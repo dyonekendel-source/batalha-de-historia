@@ -1,4 +1,4 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card"><div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span class="pill">10 questões</span></div><label for="topic">Tema</label><select id="topic"></select><div class="rules"><span>🎯 1.000 pontos por acerto</span><span>🧑‍🏫 Professor controla o ritmo</span><span>🔀 Questões e alternativas aleatórias</span></div><button id="create" class="btn primary wide" disabled>Conectando…</button><div id="connectionStatus" class="student-msg">Conectando ao servidor…</div></section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card"><div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span class="pill">10 questões</span></div><label for="topic">Tema</label><select id="topic"></select><div class="rules"><span>🎯 1.000 pontos por acerto</span><span>🧑‍🏫 Professor controla o ritmo</span><span>🔀 Questões e alternativas aleatórias</span></div><button id="create" class="btn primary wide" disabled>Conectando…</button><div id="connectionStatus" class="student-msg">Conectando ao servidor…</div><div id="topicHint" class="student-msg">Selecione um tema com pelo menos 10 questões válidas.</div></section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
 const $=id=>document.getElementById(id);
 let ws=null, room=null, wsReady=false, topicsLoaded=false, reconnectTimer=null;
 
@@ -59,13 +59,19 @@ function sendAction(action, extra={}){
   ws.send(JSON.stringify({action,...extra}));
 }
 
+function updateTopicHint(topics){const sel=$('topic'), cur=topics.find(t=>String(t.id)===String(sel.value));if(cur)$('topicHint').textContent=cur.question_count>=10?`${cur.question_count} questões válidas disponíveis neste tema. A partida sorteará 10.`:`Este tema tem ${cur.question_count} questões válidas e não pode iniciar uma partida ainda.`;}
+$('topic').onchange=async()=>{try{const r=await fetch('/api/topics');const topics=await r.json();updateTopicHint(topics)}catch(e){}};
+
 async function load(){
   try{
     const r=await fetch('/api/topics');
     if(!r.ok)throw new Error('topics');
     const topics=await r.json();
-    $('topic').innerHTML=topics.map(t=>`<option value="${t.id}">${t.name} — ${t.question_count} questões</option>`).join('');
+    $('topic').innerHTML=topics.map(t=>`<option value="${t.id}" ${t.question_count<10?'disabled':''}>${esc(t.name)} — ${t.question_count} questões${t.question_count<10?' — indisponível':''}</option>`).join('');
+    const firstAvailable=topics.find(t=>t.question_count>=10);
+    if(firstAvailable) $('topic').value=firstAvailable.id;
     topicsLoaded=true;
+    updateTopicHint(topics);
     if(wsReady){ $('create').disabled=false; $('create').textContent='Criar sala'; }
   }catch(e){
     $('topic').innerHTML='<option>Erro ao carregar temas</option>';
