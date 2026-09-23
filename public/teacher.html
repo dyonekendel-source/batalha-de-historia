@@ -1,12 +1,97 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card"><div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span class="pill">10 questões</span></div><label for="topic">Tema</label><select id="topic"></select><div class="rules"><span>🎯 1.000 pontos por acerto</span><span>🧑‍🏫 Professor controla o ritmo</span><span>🔀 Questões e alternativas aleatórias</span></div><button id="create" class="btn primary wide">Criar sala</button></section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
-const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws'),$=id=>document.getElementById(id);let room=null;
-async function load(){const topics=await fetch('/api/topics').then(r=>r.json());$('topic').innerHTML=topics.map(t=>`<option value="${t.id}">${t.name} — ${t.question_count} questões</option>`).join('')}$('create').onclick=()=>ws.send(JSON.stringify({action:'create',topicId:$('topic').value}));
-ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='created'){room=m.room;$('setup').classList.add('hidden');$('game').classList.remove('hidden');$('roomBadge').textContent='SALA '+room;$('code').textContent=room;fetch('/api/qr?room='+room).then(r=>r.text()).then(x=>$('qr').src='data:image/png;base64,'+x)}else if(m.type==='state')render(m)};
-function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function ranking(ps){return ps.length?ps.map((p,i)=>`<li><span><b>${i+1}.</b> ${esc(p.name)}</span><strong>${p.score.toLocaleString('pt-BR')} pts</strong></li>`).join(''):'<li class="empty">Nenhum jogador ainda.</li>'}function podium(ps){return `<div class="podium"><div class="podium-card second"><div class="place">🥈</div><b>${esc(ps[1]?.name||'—')}</b><span>${(ps[1]?.score||0).toLocaleString('pt-BR')} pts</span></div><div class="podium-card first"><div class="place">🏆</div><b>${esc(ps[0]?.name||'—')}</b><span>${(ps[0]?.score||0).toLocaleString('pt-BR')} pts</span></div><div class="podium-card third"><div class="place">🥉</div><b>${esc(ps[2]?.name||'—')}</b><span>${(ps[2]?.score||0).toLocaleString('pt-BR')} pts</span></div></div>`}
-function render(st){$('count').textContent=st.players.length;$('players').innerHTML=ranking(st.players);$('progress').textContent=st.phase==='lobby'?'Aguardando jogadores':st.phase==='podium'?'PÓDIO FINAL':st.phase==='final'?'PARTIDA ENCERRADA':`QUESTÃO ${st.questionNumber}/10`;$('statusLabel').textContent=st.topic||'';
-if(st.phase==='lobby')$('content').innerHTML=`<div class="waiting"><div class="big">📱</div><span class="eyebrow">SALA ${st.room}</span><h2>Aguardando jogadores</h2><p>Quando todos estiverem prontos, clique para começar.</p><button class="btn primary" onclick="ws.send(JSON.stringify({action:'start'}))" ${st.players.length?'':'disabled'}>Iniciar partida</button></div>`;
-else if(st.phase==='question'){const q=st.question;$('content').innerHTML=`<div class="question"><div class="question-meta"><span class="pill">${esc(q.difficulty||'')}</span><span class="answered">${st.players.filter(p=>p.answered).length}/${st.players.length} responderam</span></div><h2>${esc(q.question)}</h2><div class="answers">${q.options.map((x,i)=>`<div class="answer"><b>${String.fromCharCode(65+i)}</b><span>${esc(x)}</span></div>`).join('')}</div><div class="teacher-control"><span>Sem cronômetro. Você decide quando encerrar.</span><button class="btn primary" onclick="ws.send(JSON.stringify({action:'finish'}))">Encerrar questão</button></div></div>`}
-else if(st.phase==='result'){const r=st.result||{};$('content').innerHTML=`<div class="result-screen"><div class="big success">✓</div><span class="eyebrow">RESULTADO DA QUESTÃO</span><h2>Resposta correta</h2><div class="correct-answer">${String.fromCharCode(65+(r.correctIndex??0))} — ${esc(r.correctAnswer||'')}</div><p>${r.answeredCount} de ${st.players.length} jogador(es) responderam.</p><h3>Ranking</h3><ol class="result-ranking">${ranking(st.players)}</ol><button class="btn primary" onclick="ws.send(JSON.stringify({action:'next'}))">${st.questionNumber>=10?'Ver pódio':'Próxima questão'}</button></div>`}
-else if(st.phase==='podium')$('content').innerHTML=`<div class="final-screen"><span class="eyebrow">FIM DAS 10 QUESTÕES</span><h2>🏆 Pódio da partida</h2>${podium(st.podium)}<button class="btn primary" onclick="ws.send(JSON.stringify({action:'finalize'}))">Encerrar partida</button></div>`;
-else $('content').innerHTML=`<div class="final-screen"><div class="big">🎉</div><span class="eyebrow">PARTIDA ENCERRADA</span><h2>Parabéns aos participantes!</h2>${podium(st.podium)}<a class="btn primary" href="/teacher.html">Nova partida</a></div>`}load();
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card"><div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span class="pill">10 questões</span></div><label for="topic">Tema</label><select id="topic"></select><div class="rules"><span>🎯 1.000 pontos por acerto</span><span>🧑‍🏫 Professor controla o ritmo</span><span>🔀 Questões e alternativas aleatórias</span></div><button id="create" class="btn primary wide" disabled>Conectando…</button><div id="connectionStatus" class="student-msg">Conectando ao servidor…</div></section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
+const $=id=>document.getElementById(id);
+let ws=null, room=null, wsReady=false, topicsLoaded=false, reconnectTimer=null;
+
+function setConnectionStatus(text, error=false){
+  const el=$('connectionStatus');
+  if(!el)return;
+  el.textContent=text;
+  el.className=error?'student-msg error':'student-msg';
+}
+
+function connect(){
+  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+  setConnectionStatus('Conectando ao servidor…');
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
+  ws.onopen=()=>{
+    wsReady=true;
+    $('create').disabled=!topicsLoaded;
+    $('create').textContent=topicsLoaded?'Criar sala':'Aguardando temas…';
+    setConnectionStatus('Servidor conectado.');
+  };
+  ws.onerror=()=>{
+    wsReady=false;
+    setConnectionStatus('Não foi possível conectar ao servidor.',true);
+  };
+  ws.onclose=()=>{
+    wsReady=false;
+    $('create').disabled=true;
+    $('create').textContent='Reconectando…';
+    if(!room){
+      setConnectionStatus('Conexão perdida. Tentando reconectar…',true);
+      reconnectTimer=setTimeout(connect,2000);
+    }else{
+      setConnectionStatus('Conexão com a partida perdida. Recarregue a página para iniciar outra sala.',true);
+    }
+  };
+  ws.onmessage=e=>{
+    const m=JSON.parse(e.data);
+    if(m.type==='created'){
+      room=m.room;
+      $('setup').classList.add('hidden');
+      $('game').classList.remove('hidden');
+      $('roomBadge').textContent='SALA '+room;
+      $('code').textContent=room;
+      fetch('/api/qr?room='+encodeURIComponent(room))
+        .then(r=>{if(!r.ok)throw new Error('QR');return r.text()})
+        .then(x=>$('qr').src='data:image/png;base64,'+x)
+        .catch(()=>{});
+    }else if(m.type==='state')render(m);
+    else if(m.type==='error')setConnectionStatus(m.message||'Ocorreu um erro.',true);
+  };
+}
+
+function sendAction(action, extra={}){
+  if(!ws || ws.readyState!==WebSocket.OPEN){
+    setConnectionStatus('A conexão ainda não está pronta. Aguarde alguns segundos e tente novamente.',true);
+    return;
+  }
+  ws.send(JSON.stringify({action,...extra}));
+}
+
+async function load(){
+  try{
+    const r=await fetch('/api/topics');
+    if(!r.ok)throw new Error('topics');
+    const topics=await r.json();
+    $('topic').innerHTML=topics.map(t=>`<option value="${t.id}">${t.name} — ${t.question_count} questões</option>`).join('');
+    topicsLoaded=true;
+    if(wsReady){ $('create').disabled=false; $('create').textContent='Criar sala'; }
+  }catch(e){
+    $('topic').innerHTML='<option>Erro ao carregar temas</option>';
+    $('create').disabled=true;
+    setConnectionStatus('Não foi possível carregar os temas.',true);
+  }
+}
+
+$('create').disabled=true;
+$('create').onclick=()=>sendAction('create',{topicId:$('topic').value});
+
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function ranking(ps){return ps.length?ps.map((p,i)=>`<li><span><b>${i+1}.</b> ${esc(p.name)}</span><strong>${p.score.toLocaleString('pt-BR')} pts</strong></li>`).join(''):'<li class="empty">Nenhum jogador ainda.</li>'}
+function podium(ps){return `<div class="podium"><div class="podium-card second"><div class="place">🥈</div><b>${esc(ps[1]?.name||'—')}</b><span>${(ps[1]?.score||0).toLocaleString('pt-BR')} pts</span></div><div class="podium-card first"><div class="place">🏆</div><b>${esc(ps[0]?.name||'—')}</b><span>${(ps[0]?.score||0).toLocaleString('pt-BR')} pts</span></div><div class="podium-card third"><div class="place">🥉</div><b>${esc(ps[2]?.name||'—')}</b><span>${(ps[2]?.score||0).toLocaleString('pt-BR')} pts</span></div></div>`}
+function render(st){
+  $('count').textContent=st.players.length;
+  $('players').innerHTML=ranking(st.players);
+  $('progress').textContent=st.phase==='lobby'?'Aguardando jogadores':st.phase==='podium'?'PÓDIO FINAL':st.phase==='final'?'PARTIDA ENCERRADA':`QUESTÃO ${st.questionNumber}/10`;
+  $('statusLabel').textContent=st.topic||'';
+  if(st.phase==='lobby')$('content').innerHTML=`<div class="waiting"><div class="big">📱</div><span class="eyebrow">SALA ${st.room}</span><h2>Aguardando jogadores</h2><p>Quando todos estiverem prontos, clique para começar.</p><button class="btn primary" onclick="sendAction('start')" ${st.players.length?'':'disabled'}>Iniciar partida</button></div>`;
+  else if(st.phase==='question'){const q=st.question;$('content').innerHTML=`<div class="question"><div class="question-meta"><span class="pill">${esc(q.difficulty||'')}</span><span class="answered">${st.players.filter(p=>p.answered).length}/${st.players.length} responderam</span></div><h2>${esc(q.question)}</h2><div class="answers">${q.options.map((x,i)=>`<div class="answer"><b>${String.fromCharCode(65+i)}</b><span>${esc(x)}</span></div>`).join('')}</div><div class="teacher-control"><span>Sem cronômetro. Você decide quando encerrar.</span><button class="btn primary" onclick="sendAction('finish')">Encerrar questão</button></div></div>`}
+  else if(st.phase==='result'){const r=st.result||{};$('content').innerHTML=`<div class="result-screen"><div class="big success">✓</div><span class="eyebrow">RESULTADO DA QUESTÃO</span><h2>Resposta correta</h2><div class="correct-answer">${String.fromCharCode(65+(r.correctIndex??0))} — ${esc(r.correctAnswer||'')}</div><p>${r.answeredCount} de ${st.players.length} jogador(es) responderam.</p><h3>Ranking</h3><ol class="result-ranking">${ranking(st.players)}</ol><button class="btn primary" onclick="sendAction('next')">${st.questionNumber>=10?'Ver pódio':'Próxima questão'}</button></div>`}
+  else if(st.phase==='podium')$('content').innerHTML=`<div class="final-screen"><span class="eyebrow">FIM DAS 10 QUESTÕES</span><h2>🏆 Pódio da partida</h2>${podium(st.podium)}<button class="btn primary" onclick="sendAction('finalize')">Encerrar partida</button></div>`;
+  else $('content').innerHTML=`<div class="final-screen"><div class="big">🎉</div><span class="eyebrow">PARTIDA ENCERRADA</span><h2>Parabéns aos participantes!</h2>${podium(st.podium)}<a class="btn primary" href="/teacher.html">Nova partida</a></div>`;
+}
+
+load();
+connect();
 </script></body></html>
