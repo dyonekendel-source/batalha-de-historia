@@ -70,7 +70,12 @@ def student():
 @app.get("/api/topics")
 def topics():
     return JSONResponse([
-        {"id": t["id"], "name": t["name"], "question_count": t["question_count"]}
+        {
+            "id": t["id"],
+            "name": t["name"],
+            "category": t.get("category", "general"),
+            "question_count": t["question_count"],
+        }
         for t in DATA["topics"]
     ])
 
