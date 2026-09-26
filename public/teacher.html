@@ -96,7 +96,18 @@ function connect(){
         .then(x=>$('qr').src='data:image/png;base64,'+x)
         .catch(()=>{});
     }else if(m.type==='state')render(m);
-    else if(m.type==='error')setConnectionStatus(m.message||'Ocorreu um erro.',true);
+    else if(m.type==='error'){
+      const msg=m.message||'Ocorreu um erro.';
+      // Se a aba de "criar minhas perguntas" está aberta, o erro (ex: sala
+      // não pôde ser criada porque duas alternativas ficaram iguais) tem que
+      // aparecer ali, não na área do banco pronto (que fica escondida).
+      if(!$('customPanel').classList.contains('hidden')){
+        $('customStatus').textContent=msg;
+        $('customStatus').className='student-msg error';
+      }else{
+        setConnectionStatus(msg,true);
+      }
+    }
   };
 }
 
