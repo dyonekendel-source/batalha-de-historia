@@ -1,4 +1,4 @@
-import base64, io, json, random, string
+import base64, io, json, os, random, string, time, uuid
 from pathlib import Path
 
 import qrcode
@@ -8,18 +8,65 @@ from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).parent
 DATA = json.loads((ROOT / "questions.json").read_text(encoding="utf-8"))
+CONTRIB_PATH = ROOT / "contribuicoes_pendentes.json"
+
+# ---------------------------------------------------------------------------
+# Firestore (opcional): se as credenciais do Firebase estiverem configuradas
+# (via variável de ambiente), a fila de revisão de contribuições dos
+# professores é salva lá, o que sobrevive a reinícios/redeploys do Render.
+# Sem credenciais configuradas, cai automaticamente pro arquivo JSON local
+# (contribuicoes_pendentes.json) — nada quebra enquanto o Firebase não está
+# pronto.
+# ---------------------------------------------------------------------------
+_firestore_db = None
+_firestore_checked = False
+
+
+def get_firestore_db():
+    global _firestore_db, _firestore_checked
+    if _firestore_checked:
+        return _firestore_db
+    _firestore_checked = True
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, firestore
+
+        cred_json = os.environ.get("FIREBASE_CREDENTIALS_JSON")
+        cred_path = os.environ.get("FIREBASE_CREDENTIALS_PATH")
+
+        if not firebase_admin._apps:
+            if cred_path and Path(cred_path).exists():
+                cred = credentials.Certificate(cred_path)
+            elif cred_json:
+                cred = credentials.Certificate(json.loads(cred_json))
+            else:
+                return None  # Firebase ainda não configurado
+            firebase_admin.initialize_app(cred)
+
+        _firestore_db = firestore.client()
+    except Exception as e:
+        print("Firestore indisponível, usando arquivo local:", e)
+        _firestore_db = None
+    return _firestore_db
+
+# Mesma lista de disciplinas usada no site principal (Estudativa), pra manter
+# a taxonomia consistente entre o quiz do site e as perguntas criadas aqui.
+DISCIPLINAS = [
+    "historia", "portugues", "matematica", "geografia", "ciencias",
+    "quimica", "fisica", "biologia", "filosofia", "sociologia", "outros",
+]
 
 app = FastAPI(title="Batalha de História")
 app.mount("/static", StaticFiles(directory=ROOT / "public"), name="static")
 rooms = {}
 
 
-def pick(topic):
-    if len(topic["questions"]) < 10:
-        raise ValueError("Este tema ainda não possui 10 questões válidas.")
-    selected = random.sample(topic["questions"], 10)
+def shuffle_questions(questions):
+    """Embaralha as alternativas de cada questão e calcula o índice da
+    correta. Usado tanto pros temas do banco quanto pras perguntas que um
+    professor cria na hora."""
     result = []
-    for q in selected:
+    for q in questions:
         options = list(q["options"])
         random.shuffle(options)
         result.append({
@@ -28,6 +75,70 @@ def pick(topic):
             "correctIndex": options.index(q["correct_answer"]),
         })
     return result
+
+
+def pick(topic):
+    if len(topic["questions"]) < 10:
+        raise ValueError("Este tema ainda não possui 10 questões válidas.")
+    selected = random.sample(topic["questions"], 10)
+    return shuffle_questions(selected)
+
+
+def load_contribuicoes():
+    db = get_firestore_db()
+    if db is not None:
+        docs = db.collection("contribuicoes_pendentes").stream()
+        items = [d.to_dict() for d in docs]
+        # Mais recentes primeiro (criadoEm é ISO 8601, então a ordenação
+        # alfabética já corresponde à ordenação cronológica).
+        items.sort(key=lambda x: x.get("criadoEm", ""), reverse=True)
+        return items
+
+    if not CONTRIB_PATH.exists():
+        return []
+    try:
+        return json.loads(CONTRIB_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_contribuicao(disciplina, tema, professor, perguntas):
+    entry = {
+        "id": uuid.uuid4().hex[:8],
+        "disciplina": disciplina,
+        "tema": tema,
+        "professor": professor or "",
+        "criadoEm": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "perguntas": perguntas,
+    }
+
+    db = get_firestore_db()
+    if db is not None:
+        db.collection("contribuicoes_pendentes").document(entry["id"]).set(entry)
+        return entry
+
+    items = load_contribuicoes()
+    items.append(entry)
+    CONTRIB_PATH.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    return entry
+
+
+def validate_custom_perguntas(perguntas):
+    if not isinstance(perguntas, list) or len(perguntas) != 10:
+        raise ValueError("Envie exatamente 10 perguntas.")
+    cleaned = []
+    for p in perguntas:
+        question = str(p.get("question", "")).strip()
+        options = [str(o).strip() for o in p.get("options", []) if str(o).strip()]
+        correct = str(p.get("correct_answer", "")).strip()
+        if not question or len(options) < 4 or not correct:
+            raise ValueError("Cada pergunta precisa de enunciado, 4 alternativas e uma marcada como certa.")
+        if correct not in options:
+            raise ValueError("A alternativa marcada como certa precisa ser idêntica a uma das opções.")
+        if len(set(options)) != len(options):
+            raise ValueError("As alternativas de uma mesma pergunta não podem se repetir.")
+        cleaned.append({"question": question, "options": options, "correct_answer": correct})
+    return cleaned
 
 
 def make_code():
@@ -72,12 +183,32 @@ def topics():
     return JSONResponse([
         {
             "id": t["id"],
+            "disciplina": t.get("disciplina", "historia"),
             "name": t["name"],
-            "category": t.get("category", "general"),
+            "category": t.get("category"),
+            "grade": t.get("grade"),
             "question_count": t["question_count"],
         }
         for t in DATA["topics"]
+        if str(t.get("name", "")).strip() != "Revoluções Atlânticas" and t.get("question_count", 0) >= 1
     ])
+
+
+@app.get("/revisar.html")
+def revisar():
+    return FileResponse(ROOT / "public/revisar.html")
+
+
+@app.get("/api/disciplinas")
+def disciplinas():
+    return JSONResponse(DISCIPLINAS)
+
+
+@app.get("/api/contribuicoes")
+def contribuicoes():
+    # Lista tudo que professores criaram na hora, ainda não revisado.
+    # Sem autenticação (o app inteiro não tem login) — não exponha esse link publicamente.
+    return JSONResponse(load_contribuicoes())
 
 
 @app.get("/api/qr")
@@ -247,6 +378,46 @@ async def ws_endpoint(ws: WebSocket):
                     "type": "created",
                     "room": room_id,
                     "topic": topic["name"],
+                })
+                await broadcast(room)
+
+            elif action == "create_custom":
+                # A disciplina pode ser uma das já conhecidas (DISCIPLINAS) ou uma
+                # matéria nova digitada pelo professor (ex.: "Projeto de Vida") —
+                # nos dois casos ela só precisa ter um nome válido.
+                disciplina = str(message.get("disciplina", "")).strip()[:60]
+                tema = str(message.get("tema", "")).strip()
+                professor = str(message.get("professor", "")).strip()
+
+                if len(disciplina) < 2 or not tema:
+                    await send(ws, {"type": "error", "message": "Informe o nome da disciplina (mínimo 2 letras) e o tema."})
+                    continue
+
+                try:
+                    perguntas = validate_custom_perguntas(message.get("perguntas"))
+                except ValueError as e:
+                    await send(ws, {"type": "error", "message": str(e)})
+                    continue
+
+                # Salva pra fila de revisão (não entra automaticamente no acervo oficial).
+                save_contribuicao(disciplina, tema, professor, perguntas)
+
+                room_id = make_code()
+                room = {
+                    "id": room_id,
+                    "topic": {"id": "custom", "name": f"{tema} (personalizado)"},
+                    "teacher": ws,
+                    "players": {},
+                    "questions": shuffle_questions(perguntas),
+                    "current": -1,
+                    "phase": "lobby",
+                }
+                rooms[room_id] = room
+                role = "teacher"
+                await send(ws, {
+                    "type": "created",
+                    "room": room_id,
+                    "topic": room["topic"]["name"],
                 })
                 await broadcast(room)
 
