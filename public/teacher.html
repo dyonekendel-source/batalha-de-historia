@@ -1,4 +1,51 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="/static/style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card"><div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span class="pill">10 questões</span></div><div id="topicPicker" class="topic-picker" aria-label="Seleção de tema"></div><div id="topicSelected" class="topic-selected">Tema selecionado: <span>—</span></div><div class="rules"><span>🎯 1.000 pontos por acerto</span><span>🧑‍🏫 Professor controla o ritmo</span><span>🔀 Questões e alternativas aleatórias</span></div><button id="create" class="btn primary wide" disabled>Conectando…</button><div id="connectionStatus" class="student-msg">Conectando ao servidor…</div><div id="topicHint" class="student-msg">Selecione um tema com pelo menos 10 questões válidas.</div></section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="/static/style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card">
+  <div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span class="pill">10 questões</span></div>
+  <div class="rules" style="margin:0 0 24px">
+    <button type="button" id="tabBank" class="btn primary" style="flex:1">📚 Usar banco pronto</button>
+    <button type="button" id="tabCustom" class="btn secondary" style="flex:1">✍️ Criar minhas perguntas</button>
+  </div>
+
+  <div id="bankPanel">
+    <label>Disciplina</label>
+    <div id="disciplinaPicker" class="disc-picker" aria-label="Seleção de disciplina"></div>
+    <div id="topicPicker" class="topic-picker" aria-label="Seleção de tema"></div>
+    <div id="topicSelected" class="topic-selected">Tema selecionado: <span>—</span></div>
+    <div class="rules"><span>🎯 1.000 pontos por acerto</span><span>🧑‍🏫 Professor controla o ritmo</span><span>🔀 Questões e alternativas aleatórias</span></div>
+    <button id="create" class="btn primary wide" disabled>Conectando…</button>
+    <div id="connectionStatus" class="student-msg">Conectando ao servidor…</div>
+    <div id="topicHint" class="student-msg">Selecione um tema com pelo menos 10 questões válidas.</div>
+  </div>
+
+  <div id="customPanel" class="hidden">
+    <label>Disciplina</label>
+    <select id="customDisciplina">
+      <option value="historia">História</option>
+      <option value="portugues">Português</option>
+      <option value="matematica">Matemática</option>
+      <option value="geografia">Geografia</option>
+      <option value="ciencias">Ciências</option>
+      <option value="quimica">Química</option>
+      <option value="fisica">Física</option>
+      <option value="biologia">Biologia</option>
+      <option value="filosofia">Filosofia</option>
+      <option value="sociologia">Sociologia</option>
+      <option value="outros">Outros</option>
+      <option value="__custom__">+ Criar uma matéria nova…</option>
+    </select>
+    <div id="customDisciplinaNovaWrap" class="hidden" style="margin-top:-8px;margin-bottom:16px">
+      <label>Nome da nova matéria (ex: "Projeto de Vida")</label>
+      <input id="customDisciplinaNova" placeholder="Digite o nome da matéria">
+    </div>
+    <label>Tema (ex: "Frações", "Revolução Francesa")</label>
+    <input id="customTema" placeholder="Digite o tema da partida">
+    <label>Seu nome (opcional, aparece na fila de revisão)</label>
+    <input id="customProfessor" placeholder="Seu nome">
+    <p class="muted">Crie 10 perguntas com 4 alternativas cada. Marque qual é a correta. Elas já valem pra essa partida e também ficam guardadas numa fila de revisão pra, depois, entrarem (ou não) no acervo oficial do site.</p>
+    <div id="customQuestions"></div>
+    <button id="createCustom" class="btn primary wide" style="margin-top:10px">Criar sala com essas perguntas</button>
+    <div id="customStatus" class="student-msg"></div>
+  </div>
+</section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
 const $=id=>document.getElementById(id);
 let ws=null, room=null, wsReady=false, topicsLoaded=false, reconnectTimer=null;
 
@@ -60,15 +107,54 @@ function sendAction(action, extra={}){
 }
 
 let selectedTopicId='';
+let allTopics=[];
+let disciplinaAtual='';
+const DISC_META={
+  historia:{nome:'História',icone:'🏛️'}, portugues:{nome:'Português',icone:'📖'},
+  matematica:{nome:'Matemática',icone:'🔢'}, geografia:{nome:'Geografia',icone:'🌍'},
+  ciencias:{nome:'Ciências',icone:'🔬'}, quimica:{nome:'Química',icone:'⚗️'},
+  fisica:{nome:'Física',icone:'🧲'}, biologia:{nome:'Biologia',icone:'🧬'},
+  filosofia:{nome:'Filosofia',icone:'💭'}, sociologia:{nome:'Sociologia',icone:'🧑‍🤝‍🧑'},
+  outros:{nome:'Outros',icone:'✨'},
+};
+const DISC_ORDER=['historia','portugues','matematica','geografia','ciencias','quimica','fisica','biologia','filosofia','sociologia','outros'];
+
+function labelForGroup(disciplina,topic){
+  if(disciplina==='historia') return topic.category==='brazil' ? 'HISTÓRIA DO BRASIL' : 'HISTÓRIA GERAL';
+  return topic.grade ? `${topic.grade}º ANO` : 'GERAL';
+}
 function updateTopicHint(topics){const cur=topics.find(t=>String(t.id)===String(selectedTopicId));if(cur)$('topicHint').textContent=cur.question_count>=10?`${cur.question_count} questões válidas disponíveis neste tema. A partida sorteará 10.`:`Este tema tem ${cur.question_count} questões válidas e não pode iniciar uma partida ainda.`;}
 function selectTopic(id, topics){const cur=topics.find(t=>String(t.id)===String(id));if(!cur||cur.question_count<10)return;selectedTopicId=String(cur.id);document.querySelectorAll('.topic-btn').forEach(b=>b.classList.toggle('selected',b.dataset.id===selectedTopicId));$('topicSelected').innerHTML=`Tema selecionado: <span>${esc(cur.name)}</span>`;updateTopicHint(topics);$('create').disabled=!(wsReady&&topicsLoaded&&selectedTopicId);if(wsReady)$('create').textContent='Criar sala';}
-function renderTopicPicker(topics){
-  const groups=[['general','HISTÓRIA GERAL'],['brazil','HISTÓRIA DO BRASIL']];
-  const visibleTopics=topics.filter(t=>String(t.name).trim()!=='Revoluções Atlânticas');
-  $('topicPicker').innerHTML=groups.map(([cat,label],index)=>{
-    const items=visibleTopics.filter(t=>t.category===cat);
+
+function renderDisciplinaPicker(){
+  const present=DISC_ORDER.filter(d=>allTopics.some(t=>t.disciplina===d));
+  $('disciplinaPicker').innerHTML=present.map(d=>{
+    const meta=DISC_META[d]||{nome:d,icone:'📘'};
+    return `<button type="button" class="disc-btn${d===disciplinaAtual?' selected':''}" data-d="${esc(d)}">${meta.icone} ${esc(meta.nome)}</button>`;
+  }).join('');
+  $('disciplinaPicker').querySelectorAll('.disc-btn').forEach(btn=>btn.addEventListener('click',()=>selectDisciplina(btn.dataset.d)));
+}
+
+function selectDisciplina(d){
+  disciplinaAtual=d;
+  $('disciplinaPicker').querySelectorAll('.disc-btn').forEach(b=>b.classList.toggle('selected',b.dataset.d===d));
+  const visibleTopics=allTopics.filter(t=>t.disciplina===d);
+  renderTopicPicker(visibleTopics);
+  const firstAvailable=visibleTopics.find(t=>t.question_count>=10);
+  selectedTopicId='';
+  if(firstAvailable) selectTopic(firstAvailable.id,visibleTopics);
+  else{ $('topicSelected').innerHTML='Tema selecionado: <span>—</span>'; $('create').disabled=true; }
+  updateTopicHint(visibleTopics);
+}
+
+function renderTopicPicker(visibleTopics){
+  const groupLabels=[];
+  const seen=new Set();
+  for(const t of visibleTopics){const g=labelForGroup(disciplinaAtual,t); if(!seen.has(g)){seen.add(g); groupLabels.push(g);}}
+  $('topicPicker').innerHTML=groupLabels.map((label,index)=>{
+    const items=visibleTopics.filter(t=>labelForGroup(disciplinaAtual,t)===label);
     return `<details class="topic-accordion" ${index===0?'open':''}>
-      <summary><span>${label}</span><small>${items.filter(t=>t.question_count>=10).length} temas disponíveis</small></summary>
+      <summary><span>${esc(label)}</span><small>${items.filter(t=>t.question_count>=10).length} temas disponíveis</small></summary>
       <div class="topic-grid">${items.map(t=>`<button type="button" class="topic-btn" data-id="${esc(t.id)}" ${t.question_count<10?'disabled':''}><strong>${esc(t.name)}</strong><span>${t.question_count} questões${t.question_count<10?' • indisponível':''}</span></button>`).join('')}</div>
     </details>`;
   }).join('');
@@ -80,12 +166,11 @@ async function load(){
   try{
     const r=await fetch('/api/topics');
     if(!r.ok)throw new Error('topics');
-    const topics=await r.json();
-    renderTopicPicker(topics);
-    const firstAvailable=topics.find(t=>t.question_count>=10 && String(t.name).trim()!=='Revoluções Atlânticas');
-    if(firstAvailable) selectTopic(firstAvailable.id,topics);
+    allTopics=(await r.json()).filter(t=>String(t.name).trim()!=='Revoluções Atlânticas');
+    renderDisciplinaPicker();
+    const firstDisc=DISC_ORDER.find(d=>allTopics.some(t=>t.disciplina===d)) || (allTopics[0]&&allTopics[0].disciplina);
+    if(firstDisc) selectDisciplina(firstDisc);
     topicsLoaded=true;
-    updateTopicHint(topics);
     if(wsReady){ $('create').disabled=!selectedTopicId; $('create').textContent=selectedTopicId?'Criar sala':'Aguardando tema…'; }
   }catch(e){
     $('topicPicker').innerHTML='<div class="student-msg error">Não foi possível carregar os temas.</div>';
@@ -96,6 +181,64 @@ async function load(){
 
 $('create').disabled=true;
 $('create').onclick=()=>{if(selectedTopicId)sendAction('create',{topicId:selectedTopicId});};
+
+// ---- Alternância entre "banco pronto" e "criar minhas perguntas" ----
+$('tabBank').onclick=()=>{
+  $('tabBank').className='btn primary';$('tabCustom').className='btn secondary';
+  $('bankPanel').classList.remove('hidden');$('customPanel').classList.add('hidden');
+};
+$('tabCustom').onclick=()=>{
+  $('tabCustom').className='btn primary';$('tabBank').className='btn secondary';
+  $('customPanel').classList.remove('hidden');$('bankPanel').classList.add('hidden');
+  if(!$('customQuestions').children.length) buildCustomForm();
+};
+
+$('customDisciplina').onchange=()=>{
+  $('customDisciplinaNovaWrap').classList.toggle('hidden', $('customDisciplina').value!=='__custom__');
+};
+
+function buildCustomForm(){
+  $('customQuestions').innerHTML=Array.from({length:10}).map((_,i)=>`
+    <div class="card" style="padding:16px;margin:14px 0" data-qidx="${i}">
+      <label>Pergunta ${i+1}</label>
+      <input class="cq-question" placeholder="Digite o enunciado da pergunta ${i+1}">
+      ${Array.from({length:4}).map((__,j)=>`
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <input type="radio" name="cq-correct-${i}" value="${j}" style="width:auto">
+          <input class="cq-option" data-opt="${j}" placeholder="Alternativa ${String.fromCharCode(65+j)}" style="flex:1">
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function collectCustomQuestions(){
+  const blocks=[...$('customQuestions').querySelectorAll('[data-qidx]')];
+  const perguntas=[];
+  for(const b of blocks){
+    const question=b.querySelector('.cq-question').value.trim();
+    const opts=[...b.querySelectorAll('.cq-option')].map(o=>o.value.trim());
+    const checked=b.querySelector('input[type=radio]:checked');
+    if(!question||opts.some(o=>!o)||!checked) return null;
+    const correct_answer=opts[Number(checked.value)];
+    perguntas.push({question,options:opts,correct_answer});
+  }
+  return perguntas.length===10?perguntas:null;
+}
+
+$('createCustom').onclick=()=>{
+  const statusEl=$('customStatus');
+  let disciplina=$('customDisciplina').value;
+  if(disciplina==='__custom__'){
+    disciplina=$('customDisciplinaNova').value.trim();
+    if(!disciplina){statusEl.textContent='Digite o nome da nova matéria.';statusEl.className='student-msg error';return;}
+  }
+  const tema=$('customTema').value.trim();
+  const professor=$('customProfessor').value.trim();
+  if(!tema){statusEl.textContent='Digite o tema da partida.';statusEl.className='student-msg error';return;}
+  const perguntas=collectCustomQuestions();
+  if(!perguntas){statusEl.textContent='Preencha as 10 perguntas, as 4 alternativas de cada uma, e marque a correta.';statusEl.className='student-msg error';return;}
+  statusEl.textContent='Criando sala…';statusEl.className='student-msg';
+  sendAction('create_custom',{disciplina,tema,professor,perguntas});
+};
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function ranking(ps){return ps.length?ps.map((p,i)=>`<li><span><b>${i+1}.</b> ${esc(p.name)}</span><strong>${p.score.toLocaleString('pt-BR')} pts</strong></li>`).join(''):'<li class="empty">Nenhum jogador ainda.</li>'}

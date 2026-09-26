@@ -1,0 +1,40 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Revisar contribuições — Batalha de História</title><meta name="robots" content="noindex, nofollow"><link rel="stylesheet" href="/static/style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">ÁREA RESTRITA</span><h1>Perguntas criadas por professores</h1><small class="author-credit">Fila de revisão — nada aqui entra no acervo oficial automaticamente</small></div></header>
+<section class="card" style="padding:24px;margin-bottom:20px">
+  <p class="muted">Esta página não tem senha — não compartilhe o link publicamente. Aqui você revê o que os professores criaram nas salas e decide o que aproveitar. Pra colocar algo no acervo oficial do site, copie o texto (botão abaixo) e envie pra mim numa conversa.</p>
+</section>
+<div id="list"></div>
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+async function load(){
+  const r = await fetch('/api/contribuicoes');
+  const items = await r.json();
+  if(!items.length){
+    $('list').innerHTML = '<p class="muted">Nenhuma contribuição pendente ainda.</p>';
+    return;
+  }
+  $('list').innerHTML = items.map(item => `
+    <section class="card" style="padding:22px;margin-bottom:16px">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">${esc(item.disciplina.toUpperCase())}</span>
+          <h2 style="font-size:22px">${esc(item.tema)}</h2>
+          <small class="muted">Criado em ${esc(item.criadoEm)}${item.professor ? ' · ' + esc(item.professor) : ''} · id ${esc(item.id)}</small>
+        </div>
+        <button class="btn secondary" onclick='copiar(${JSON.stringify(JSON.stringify(item))})'>📋 Copiar como JSON</button>
+      </div>
+      <ol style="padding-left:20px;color:var(--muted)">
+        ${item.perguntas.map(p => `<li style="margin-bottom:10px"><b style="color:var(--text)">${esc(p.question)}</b><br>${p.options.map(o => o === p.correct_answer ? `✅ ${esc(o)}` : `— ${esc(o)}`).join('<br>')}</li>`).join('')}
+      </ol>
+    </section>
+  `).join('');
+}
+
+function copiar(json){
+  navigator.clipboard.writeText(json).then(()=>alert('Copiado! Cole numa mensagem pra mim quando quiser integrar ao acervo oficial.'));
+}
+
+load();
+</script>
+</main></body></html>
