@@ -124,8 +124,8 @@ def save_contribuicao(disciplina, tema, professor, perguntas):
 
 
 def validate_custom_perguntas(perguntas):
-    if not isinstance(perguntas, list) or len(perguntas) != 10:
-        raise ValueError("Envie exatamente 10 perguntas.")
+    if not isinstance(perguntas, list) or not (1 <= len(perguntas) <= 50):
+        raise ValueError("Envie entre 1 e 50 perguntas.")
     cleaned = []
     for p in perguntas:
         question = str(p.get("question", "")).strip()
@@ -257,7 +257,7 @@ def teacher_state(room):
         "topic": room["topic"]["name"],
         "phase": room["phase"],
         "questionNumber": room["current"] + 1,
-        "total": 10,
+        "total": len(room["questions"]),
         "question": question,
         "result": result,
         "players": ranking(room),
@@ -291,7 +291,7 @@ def student_state(room, player):
         "type": "state",
         "phase": room["phase"],
         "questionNumber": room["current"] + 1,
-        "total": 10,
+        "total": len(room["questions"]),
         "question": question,
         "result": result,
         "score": player["score"],
@@ -479,7 +479,7 @@ async def ws_endpoint(ws: WebSocket):
                 and room
                 and room["phase"] == "result"
             ):
-                if room["current"] >= 9:
+                if room["current"] >= len(room["questions"]) - 1:
                     room["phase"] = "podium"
                     await broadcast(room)
                 else:
