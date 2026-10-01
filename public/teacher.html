@@ -49,7 +49,17 @@
   </div>
 </section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
 const $=id=>document.getElementById(id);
-let ws=null, room=null, wsReady=false, topicsLoaded=false, reconnectTimer=null;
+let ws=null, room=null, wsReady=false, topicsLoaded=false, reconnectTimer=null, pingTimer=null;
+
+// Mantém a conexão viva: alguns servidores derrubam WebSockets parados por
+// muito tempo — e no painel do professor é comum ficar minutos parado numa
+// tela de pergunta/resultado esperando a turma responder.
+function startPing(){
+  if(pingTimer) clearInterval(pingTimer);
+  pingTimer = setInterval(() => {
+    if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({action:'ping'}));
+  }, 20000);
+}
 
 function setConnectionStatus(text, error=false){
   const el=$('connectionStatus');
@@ -64,6 +74,7 @@ function connect(){
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
   ws.onopen=()=>{
     wsReady=true;
+    startPing();
     $('create').disabled=!topicsLoaded;
     $('create').textContent=topicsLoaded?'Criar sala':'Aguardando temas…';
     setConnectionStatus('Servidor conectado.');
@@ -73,6 +84,7 @@ function connect(){
     setConnectionStatus('Não foi possível conectar ao servidor.',true);
   };
   ws.onclose=()=>{
+    if(pingTimer){clearInterval(pingTimer);pingTimer=null;}
     wsReady=false;
     $('create').disabled=true;
     $('create').textContent='Reconectando…';
@@ -270,7 +282,7 @@ $('createCustom').onclick=()=>{
 };
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function ranking(ps){return ps.length?ps.map((p,i)=>`<li><span><b>${i+1}.</b> ${esc(p.name)}</span><strong>${p.score.toLocaleString('pt-BR')} pts</strong></li>`).join(''):'<li class="empty">Nenhum jogador ainda.</li>'}
+function ranking(ps){return ps.length?ps.map((p,i)=>`<li${p.connected===false?' style="opacity:.55"':''}><span><b>${i+1}.</b> ${esc(p.name)}${p.connected===false?' <small>(reconectando…)</small>':''}</span><strong>${p.score.toLocaleString('pt-BR')} pts</strong></li>`).join(''):'<li class="empty">Nenhum jogador ainda.</li>'}
 function podium(ps){return `<div class="podium"><div class="podium-card second"><div class="place">🥈</div><b>${esc(ps[1]?.name||'—')}</b><span>${(ps[1]?.score||0).toLocaleString('pt-BR')} pts</span></div><div class="podium-card first"><div class="place">🏆</div><b>${esc(ps[0]?.name||'—')}</b><span>${(ps[0]?.score||0).toLocaleString('pt-BR')} pts</span></div><div class="podium-card third"><div class="place">🥉</div><b>${esc(ps[2]?.name||'—')}</b><span>${(ps[2]?.score||0).toLocaleString('pt-BR')} pts</span></div></div>`}
 function render(st){
   $('count').textContent=st.players.length;

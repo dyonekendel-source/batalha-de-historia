@@ -1,4 +1,162 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>Aluno — Batalha de História</title><link rel="stylesheet" href="/static/style.css"></head><body class="student-body"><main class="center"><div class="card student-card"><div class="logo">⚔️</div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Entre na partida</h1><section id="join"><input id="name" maxlength="24" placeholder="Seu nome ou apelido"><input id="room" maxlength="4" placeholder="Código da sala" style="text-transform:uppercase"><button class="btn primary wide" onclick="join()">Entrar na sala</button><p id="err" class="error"></p></section><section id="play" class="hidden"><div class="mobile-top"><span id="progress"></span><strong id="score"></strong></div><div id="qwrap"></div><div id="answers" class="answers mobile"></div><div id="msg" class="student-msg"></div></section></div></main><script>
-const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws'),params=new URLSearchParams(location.search);if(params.get('room'))document.getElementById('room').value=params.get('room').toUpperCase();function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function join(){const n=document.getElementById('name').value.trim(),r=document.getElementById('room').value.trim().toUpperCase();if(!n||!r){document.getElementById('err').textContent='Informe seu nome e o código da sala.';return}ws.send(JSON.stringify({action:'join',name:n,room:r}))}
-ws.onmessage=e=>{const st=JSON.parse(e.data);if(st.type==='error'){document.getElementById('err').textContent=st.message;return}if(st.type==='joined'){document.getElementById('join').classList.add('hidden');document.getElementById('play').classList.remove('hidden');return}if(st.type!=='state')return;document.getElementById('score').textContent=(st.score||0).toLocaleString('pt-BR')+' pts';if(st.phase==='question'){document.getElementById('progress').textContent=`QUESTÃO ${st.questionNumber}/${st.total}`;document.getElementById('qwrap').innerHTML=`<h2 class="mobile-question">${esc(st.question.question)}</h2>`;document.getElementById('answers').innerHTML=st.question.options.map((x,i)=>`<button class="answerbtn" onclick="answer(${i})"><b>${String.fromCharCode(65+i)}</b><span>${esc(x)}</span></button>`).join('');document.getElementById('msg').textContent=st.answered?'✓ Resposta enviada. Aguarde o professor.':''}else if(st.phase==='result'){const r=st.result||{};const ok=r.correct===true;document.getElementById('progress').textContent=`RESULTADO ${st.questionNumber}/${st.total}`;document.getElementById('qwrap').innerHTML=`<div class="student-result"><div class="big ${ok?'success':''}">${ok?'✓':'✕'}</div><h2>${ok?'Você acertou!':'Você errou!'}</h2><div class="correct-answer">Resposta correta: ${String.fromCharCode(65+(r.correctIndex??0))} — ${esc(r.correctAnswer||'')}</div></div>`;document.getElementById('answers').innerHTML='';document.getElementById('msg').textContent=ok?'Você ganhou 1.000 pontos. Aguarde o professor liberar a próxima questão.':'0 pontos nesta questão. Aguarde o professor liberar a próxima questão.'}else if(st.phase==='podium'){document.getElementById('progress').textContent='PÓDIO FINAL';document.getElementById('qwrap').innerHTML='<div class="student-result"><div class="big">🏆</div><h2>Partida encerrada!</h2><p>Confira o pódio na tela do professor.</p></div>';document.getElementById('answers').innerHTML='';document.getElementById('msg').textContent=`Sua pontuação: ${(st.score||0).toLocaleString('pt-BR')} pontos.`}else if(st.phase==='final'){document.getElementById('progress').textContent='FIM DA PARTIDA';document.getElementById('qwrap').innerHTML='<div class="student-result"><div class="big">🎉</div><h2>Obrigado por jogar!</h2></div>';document.getElementById('answers').innerHTML='';document.getElementById('msg').textContent=`Sua pontuação final: ${(st.score||0).toLocaleString('pt-BR')} pontos.`}};function answer(i){ws.send(JSON.stringify({action:'answer',index:i}));document.querySelectorAll('.answerbtn').forEach(b=>b.disabled=true);document.getElementById('msg').textContent='✓ Resposta enviada. Aguarde o professor.'}
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>Aluno — Batalha de História</title><link rel="stylesheet" href="/static/style.css"></head><body class="student-body"><main class="center"><div class="card student-card"><div class="logo">⚔️</div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Entre na partida</h1><section id="join"><input id="name" maxlength="24" placeholder="Seu nome ou apelido"><input id="room" maxlength="4" placeholder="Código da sala" style="text-transform:uppercase"><button class="btn primary wide" onclick="join()">Entrar na sala</button><p id="err" class="error"></p></section><section id="play" class="hidden"><div id="reconnectBanner" class="student-msg hidden" style="margin-bottom:10px"></div><div class="mobile-top"><span id="progress"></span><strong id="score"></strong></div><div id="qwrap"></div><div id="answers" class="answers mobile"></div><div id="msg" class="student-msg"></div></section></div></main><script>
+// Token de identidade do aluno: gerado uma vez e guardado no aparelho. É o
+// que permite reconectar na mesma sala, com o mesmo nome e a mesma
+// pontuação, se a conexão cair no meio da partida — mesmo que a tela seja
+// fechada e reaberta.
+function getToken(){
+  try{
+    let t = localStorage.getItem('batalha_token');
+    if(!t){ t = (crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(16).slice(2))); localStorage.setItem('batalha_token', t); }
+    return t;
+  }catch(e){ return ''; } // navegador privado/bloqueado: sem token, reconexão só por nome
+}
+const TOKEN = getToken();
+
+function saveSession(name, room){
+  try{ localStorage.setItem('batalha_session', JSON.stringify({name, room, ts: Date.now()})); }catch(e){}
+}
+function loadSession(){
+  try{
+    const raw = localStorage.getItem('batalha_session');
+    if(!raw) return null;
+    const s = JSON.parse(raw);
+    // Sessão expira em 6h, pra não tentar "ressuscitar" partidas de dias atrás
+    if(!s || !s.room || !s.name || (Date.now() - (s.ts||0)) > 6*60*60*1000) return null;
+    return s;
+  }catch(e){ return null; }
+}
+function clearSession(){ try{ localStorage.removeItem('batalha_session'); }catch(e){} }
+
+const params=new URLSearchParams(location.search);
+const savedSession = loadSession();
+if(params.get('room')) document.getElementById('room').value = params.get('room').toUpperCase();
+else if(savedSession) document.getElementById('room').value = savedSession.room;
+if(savedSession) document.getElementById('name').value = savedSession.name;
+
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+let ws = null, reconnectTimer = null, hasJoined = false, intentionalClose = false, pingTimer = null;
+let currentName = '', currentRoom = '';
+
+// Mantém a conexão viva: alguns servidores derrubam WebSockets parados por
+// muito tempo (ex.: durante a tela de resultado, esperando o professor).
+function startPing(){
+  if(pingTimer) clearInterval(pingTimer);
+  pingTimer = setInterval(() => {
+    if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({action:'ping'}));
+  }, 20000);
+}
+
+function setReconnectBanner(text){
+  const el = document.getElementById('reconnectBanner');
+  if(!text){ el.classList.add('hidden'); el.textContent=''; return; }
+  el.classList.remove('hidden');
+  el.textContent = text;
+}
+
+function connect(){
+  if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
+  ws = new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
+
+  ws.onopen = () => {
+    startPing();
+    // Se já tínhamos entrado antes (reconexão automática após queda de
+    // conexão), reenvia o join sozinho, sem o aluno precisar fazer nada.
+    if(hasJoined && currentName && currentRoom){
+      setReconnectBanner('Reconectando você à partida…');
+      ws.send(JSON.stringify({action:'join', name: currentName, room: currentRoom, token: TOKEN}));
+    }
+  };
+
+  ws.onclose = () => {
+    if(pingTimer){ clearInterval(pingTimer); pingTimer=null; }
+    if(intentionalClose) return;
+    if(hasJoined){
+      // Caiu no meio do jogo: tenta voltar sozinho, sem precisar que o aluno
+      // faça nada — só avisa que está tentando.
+      setReconnectBanner('Conexão perdida. Tentando reconectar…');
+      reconnectTimer = setTimeout(connect, 1800);
+    }
+    // Se ainda não tinha entrado em nenhuma sala, não tem o que reconectar —
+    // o aluno só tenta de novo pelo botão "Entrar na sala".
+  };
+
+  ws.onerror = () => {};
+
+  ws.onmessage = e => {
+    const st = JSON.parse(e.data);
+    if(st.type === 'error'){
+      if(hasJoined){
+        // Erro numa tentativa de reconexão/restauração (ex.: a sala não existe
+        // mais, ou a partida já acabou). Não insiste — volta pra tela inicial
+        // com os dados preenchidos, pra o aluno decidir o que fazer.
+        if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
+        hasJoined = false;
+        clearSession();
+        setReconnectBanner('');
+        document.getElementById('play').classList.add('hidden');
+        document.getElementById('join').classList.remove('hidden');
+        document.getElementById('err').textContent = st.message;
+      } else {
+        document.getElementById('err').textContent = st.message;
+      }
+      return;
+    }
+    if(st.type === 'joined'){
+      hasJoined = true;
+      setReconnectBanner('');
+      saveSession(currentName, currentRoom);
+      document.getElementById('join').classList.add('hidden');
+      document.getElementById('play').classList.remove('hidden');
+      return;
+    }
+    if(st.type !== 'state') return;
+    setReconnectBanner('');
+    document.getElementById('score').textContent=(st.score||0).toLocaleString('pt-BR')+' pts';
+    if(st.phase==='question'){document.getElementById('progress').textContent=`QUESTÃO ${st.questionNumber}/${st.total}`;document.getElementById('qwrap').innerHTML=`<h2 class="mobile-question">${esc(st.question.question)}</h2>`;document.getElementById('answers').innerHTML=st.question.options.map((x,i)=>`<button class="answerbtn" onclick="answer(${i})"><b>${String.fromCharCode(65+i)}</b><span>${esc(x)}</span></button>`).join('');document.getElementById('msg').textContent=st.answered?'✓ Resposta enviada. Aguarde o professor.':''}
+    else if(st.phase==='result'){const r=st.result||{};const ok=r.correct===true;document.getElementById('progress').textContent=`RESULTADO ${st.questionNumber}/${st.total}`;document.getElementById('qwrap').innerHTML=`<div class="student-result"><div class="big ${ok?'success':''}">${ok?'✓':'✕'}</div><h2>${ok?'Você acertou!':'Você errou!'}</h2><div class="correct-answer">Resposta correta: ${String.fromCharCode(65+(r.correctIndex??0))} — ${esc(r.correctAnswer||'')}</div></div>`;document.getElementById('answers').innerHTML='';document.getElementById('msg').textContent=ok?'Você ganhou 1.000 pontos. Aguarde o professor liberar a próxima questão.':'0 pontos nesta questão. Aguarde o professor liberar a próxima questão.'}
+    else if(st.phase==='podium'){document.getElementById('progress').textContent='PÓDIO FINAL';document.getElementById('qwrap').innerHTML='<div class="student-result"><div class="big">🏆</div><h2>Partida encerrada!</h2><p>Confira o pódio na tela do professor.</p></div>';document.getElementById('answers').innerHTML='';document.getElementById('msg').textContent=`Sua pontuação: ${(st.score||0).toLocaleString('pt-BR')} pontos.`}
+    else if(st.phase==='final'){document.getElementById('progress').textContent='FIM DA PARTIDA';document.getElementById('qwrap').innerHTML='<div class="student-result"><div class="big">🎉</div><h2>Obrigado por jogar!</h2></div>';document.getElementById('answers').innerHTML='';document.getElementById('msg').textContent=`Sua pontuação final: ${(st.score||0).toLocaleString('pt-BR')} pontos.`;clearSession();}
+  };
+}
+
+// Se a página inteira foi recarregada (ex.: o app foi fechado e reaberto)
+// enquanto o aluno ainda estava numa partida, restaura a sessão sozinho em
+// vez de mostrar a tela de "Entre na partida" de novo.
+if(savedSession){
+  currentName = savedSession.name;
+  currentRoom = savedSession.room;
+  hasJoined = true;
+  document.getElementById('join').classList.add('hidden');
+  document.getElementById('play').classList.remove('hidden');
+  setReconnectBanner('Restaurando sua sessão…');
+}
+connect();
+
+function join(){
+  const n=document.getElementById('name').value.trim(), r=document.getElementById('room').value.trim().toUpperCase();
+  if(!n||!r){document.getElementById('err').textContent='Informe seu nome e o código da sala.';return}
+  document.getElementById('err').textContent='';
+  currentName = n; currentRoom = r;
+  if(ws && ws.readyState===WebSocket.OPEN){
+    ws.send(JSON.stringify({action:'join', name:n, room:r, token:TOKEN}));
+  } else {
+    // Socket ainda conectando/reconectando: o onopen cuida de enviar assim que abrir.
+    hasJoined = true;
+  }
+}
+
+// Reconexão automática também quando o navegador volta a ficar visível/online
+// (comum no celular: o app vai pra segundo plano, o SO mata a conexão, e o
+// aluno só percebe quando volta pro app).
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState==='visible' && hasJoined && (!ws || ws.readyState===WebSocket.CLOSED)){
+    connect();
+  }
+});
+window.addEventListener('online', () => {
+  if(hasJoined && (!ws || ws.readyState===WebSocket.CLOSED)) connect();
+});
+
+function answer(i){ws.send(JSON.stringify({action:'answer',index:i}));document.querySelectorAll('.answerbtn').forEach(b=>b.disabled=true);document.getElementById('msg').textContent='✓ Resposta enviada. Aguarde o professor.'}
 </script></body></html>
