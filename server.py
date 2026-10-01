@@ -191,7 +191,12 @@ def make_code():
 def ranking(room):
     return sorted(
         [
-            {"name": p["name"], "score": p["score"], "answered": p["answered"]}
+            {
+                "name": p["name"],
+                "score": p["score"],
+                "answered": p["answered"],
+                "connected": p.get("connected", True),
+            }
             for p in room["players"].values()
         ],
         key=lambda x: x["score"],
@@ -678,25 +683,77 @@ async def ws_endpoint(ws: WebSocket):
             elif action == "join":
                 room_id = str(message.get("room", "")).upper()
                 target = rooms.get(room_id)
+                name = str(message.get("name", "Aluno")).strip()[:24] or "Aluno"
+                # Token gerado e guardado pelo navegador do aluno (localStorage),
+                # usado pra reconhecer o mesmo aluno numa reconexão — mesmo que
+                # a conexão WebSocket caia e volte com um ID técnico diferente.
+                token = str(message.get("token", "")).strip()[:64]
 
                 if not target:
                     await send(ws, {"type": "error", "message": "Sala não encontrada."})
                     continue
+
                 if target["phase"] != "lobby":
-                    await send(ws, {"type": "error", "message": "A partida já começou."})
+                    # A partida já começou: só deixa entrar quem já estava na
+                    # sala e caiu no meio do jogo (reconexão), não um aluno
+                    # novo. Primeiro tenta pelo token (mesmo aparelho/navegador);
+                    # se não bater, tenta pelo nome entre os desconectados (caso
+                    # o aluno tenha trocado de aparelho).
+                    existing_id = next(
+                        (pid for pid, p in target["players"].items() if token and p.get("token") == token),
+                        None,
+                    )
+                    if existing_id is None:
+                        name_norm = _sem_acento(name.lower())
+                        existing_id = next(
+                            (
+                                pid for pid, p in target["players"].items()
+                                if not p.get("connected", True) and _sem_acento(p["name"].lower()) == name_norm
+                            ),
+                            None,
+                        )
+
+                    if existing_id is None:
+                        await send(ws, {
+                            "type": "error",
+                            "message": "A partida já começou e você não estava nela. Peça pro professor incluir você na próxima partida.",
+                        })
+                        continue
+
+                    player = target["players"][existing_id]
+                    player["ws"] = ws
+                    player["connected"] = True
+                    if token:
+                        player["token"] = token
+                    player_id = existing_id
+                    room = target
+                    role = "student"
+                    await send(ws, {"type": "joined", "room": room_id, "reconnected": True})
+                    await broadcast(room)
                     continue
 
-                player_id = str(id(ws))
-                target["players"][player_id] = {
-                    "name": str(message.get("name", "Aluno")).strip()[:24] or "Aluno",
-                    "score": 0,
-                    "answered": False,
-                    "answer": None,
-                    "last_answered": False,
-                    "last_answer": None,
-                    "last_correct": None,
-                    "ws": ws,
-                }
+                # Sala ainda no lobby: entra normalmente. Se o token já existir
+                # (ex.: o aluno recarregou a página ainda no lobby), reaproveita
+                # o registro em vez de duplicar o jogador na lista.
+                player_id = token or str(id(ws))
+                if player_id in target["players"]:
+                    player = target["players"][player_id]
+                    player["ws"] = ws
+                    player["connected"] = True
+                    player["name"] = name
+                else:
+                    target["players"][player_id] = {
+                        "name": name,
+                        "score": 0,
+                        "answered": False,
+                        "answer": None,
+                        "last_answered": False,
+                        "last_answer": None,
+                        "last_correct": None,
+                        "connected": True,
+                        "token": token,
+                        "ws": ws,
+                    }
                 room = target
                 role = "student"
                 await send(ws, {"type": "joined", "room": room_id})
@@ -748,9 +805,27 @@ async def ws_endpoint(ws: WebSocket):
                 room["phase"] = "final"
                 await broadcast(room)
 
+            elif action == "ping":
+                # "Sinal de vida" enviado periodicamente pelo navegador (professor
+                # e aluno) só pra manter a conexão WebSocket ativa — serviços como
+                # o Render costumam derrubar conexões caladas por muito tempo (por
+                # exemplo, enquanto o professor demora pra passar pra próxima
+                # questão). Não precisa fazer nada além de responder.
+                await send(ws, {"type": "pong"})
+
     except WebSocketDisconnect:
         if role == "student" and room and player_id in room["players"]:
-            del room["players"][player_id]
+            if room["phase"] == "lobby":
+                # Ainda não começou: sair de verdade (não tem pontuação a preservar).
+                del room["players"][player_id]
+            else:
+                # Partida em andamento: mantém o jogador na lista (pontuação
+                # preservada) e só marca como desconectado, pra poder voltar
+                # depois usando o mesmo nome — o navegador tenta reconectar
+                # sozinho (veja student.html), e se o aluno reabrir manualmente,
+                # o servidor reconhece pelo token salvo no aparelho dele.
+                room["players"][player_id]["connected"] = False
+                room["players"][player_id]["ws"] = None
             await broadcast(room)
         elif role == "teacher" and room:
             room["teacher"] = None
