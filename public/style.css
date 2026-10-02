@@ -19,3 +19,13 @@
 .topic-accordion summary small{margin-left:auto;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:0;text-transform:none}
 .topic-accordion .topic-grid{padding:0 18px 18px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media(max-width:650px){.topic-accordion .topic-grid{grid-template-columns:1fr}.topic-accordion summary{padding:16px}.topic-accordion summary small{display:none}}
+
+/* Ações no topo do painel do professor (encerrar sala + código da sala) */
+.topbar-actions{display:flex;align-items:center;gap:12px}
+.topbar-actions .btn{padding:10px 16px;font-size:13px}
+.topbar-actions .btn.secondary{background:#3a1f28;color:var(--danger);border:1px solid #5a2a35}
+
+/* Botão de sair da sala, no topo da tela do aluno durante a partida */
+.student-topbar{display:flex;justify-content:flex-end;margin-bottom:-6px}
+.student-topbar .btn{padding:8px 14px;font-size:13px;background:transparent;color:var(--muted);border:1px solid var(--line)}
+.student-topbar .btn:hover{color:var(--danger);border-color:var(--danger)}
