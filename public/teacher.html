@@ -1,8 +1,38 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de Estudo</title><link rel="stylesheet" href="/static/style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE ESTUDO</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div class="topbar-actions"><button id="endRoomBtn" class="btn secondary hidden" onclick="endRoom()">🚫 Encerrar sala</button><div id="roomBadge" class="badge">SEM SALA</div></div></header><section id="setup" class="card setup-card">
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de Estudo</title><link rel="stylesheet" href="/static/style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE ESTUDO</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div class="topbar-actions"><div id="professorBox"></div><button id="endRoomBtn" class="btn secondary hidden" onclick="endRoom()">🚫 Encerrar sala</button><div id="roomBadge" class="badge">SEM SALA</div></div></header>
+
+<div id="authModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px">
+  <div class="card" style="max-width:420px;width:100%;padding:28px">
+    <div class="rules" style="margin:0 0 18px">
+      <button type="button" id="authTabLogin" class="btn primary" style="flex:1">Entrar</button>
+      <button type="button" id="authTabCadastro" class="btn secondary" style="flex:1">Criar conta</button>
+    </div>
+    <div id="authLoginForm">
+      <label>E-mail</label>
+      <input id="loginEmail" type="email" placeholder="seu@email.com">
+      <label>Senha</label>
+      <input id="loginSenha" type="password" placeholder="Sua senha">
+      <button id="loginSubmit" class="btn primary wide" style="margin-top:10px">Entrar</button>
+    </div>
+    <div id="authCadastroForm" class="hidden">
+      <label>Seu nome</label>
+      <input id="cadNome" placeholder="Como quer ser chamado">
+      <label>E-mail</label>
+      <input id="cadEmail" type="email" placeholder="seu@email.com">
+      <label>Senha (mínimo 6 caracteres)</label>
+      <input id="cadSenha" type="password" placeholder="Crie uma senha">
+      <button id="cadSubmit" class="btn primary wide" style="margin-top:10px">Criar conta</button>
+    </div>
+    <div id="authStatus" class="student-msg" style="margin-top:12px"></div>
+    <button id="authClose" class="btn secondary wide" style="margin-top:10px">Fechar</button>
+  </div>
+</div>
+
+<section id="setup" class="card setup-card">
   <div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span id="questionsPill" class="pill">10 questões</span></div>
   <div class="rules" style="margin:0 0 24px">
     <button type="button" id="tabBank" class="btn primary" style="flex:1">📚 Usar banco pronto</button>
     <button type="button" id="tabCustom" class="btn secondary" style="flex:1">✍️ Criar minhas perguntas</button>
+    <button type="button" id="tabSaved" class="btn secondary" style="flex:1">💾 Meus jogos salvos</button>
   </div>
 
   <div id="bankPanel">
@@ -44,12 +74,138 @@
     <input id="customQtd" type="number" min="1" max="50" value="10" style="max-width:140px">
     <p class="muted">Crie quantas perguntas quiser (mínimo 1), cada uma com 4 alternativas. Marque qual é a correta. Elas já valem pra essa partida e também ficam guardadas numa fila de revisão pra, depois, entrarem (ou não) no acervo oficial do site.</p>
     <div id="customQuestions"></div>
+    <label id="saveGameWrap" class="hidden" style="display:flex;align-items:center;gap:10px;margin-top:14px">
+      <input type="checkbox" id="saveGameCheck" style="width:auto">
+      <span style="font-weight:600">💾 Salvar essas perguntas na minha conta, pra usar de novo depois</span>
+    </label>
+    <p id="saveGameHint" class="muted hidden">Entre na sua conta de professor (canto superior direito) pra poder salvar essas perguntas e reaproveitá-las depois.</p>
     <button id="createCustom" class="btn primary wide" style="margin-top:10px">Criar sala com essas perguntas</button>
     <div id="customStatus" class="student-msg"></div>
+  </div>
+
+  <div id="savedPanel" class="hidden">
+    <p class="muted">Jogos que você criou e salvou na sua conta. Clique em "Jogar agora" pra abrir uma sala direto, sem digitar tudo de novo.</p>
+    <div id="savedList"></div>
   </div>
 </section><section id="game" class="hidden"><div class="grid"><div class="card mainpanel"><div class="topline"><span id="progress"></span><span id="statusLabel"></span></div><div id="content"></div></div><aside class="card side"><h3>📱 Entrar na sala</h3><img id="qr" class="qr" alt="QR Code"><div id="code" class="roomcode">----</div><p class="muted">Os alunos escaneiam o QR Code. Eles podem estar em outra rede Wi-Fi ou no 4G/5G.</p><div class="side-heading"><h3>Jogadores</h3><span id="count" class="count">0</span></div><ol id="players" class="players"></ol></aside></div></section></main><script>
 const $=id=>document.getElementById(id);
 let ws=null, room=null, wsReady=false, topicsLoaded=false, reconnectTimer=null, pingTimer=null;
+let professor=null; // {nome, email} quando logado, senão null
+
+// ---- Conta de professor: login/cadastro, e jogos salvos ----
+function renderProfessorBox(){
+  if(professor){
+    $('professorBox').innerHTML=`<span class="badge" style="margin-right:8px">👤 ${esc(professor.nome)}</span><button class="btn secondary" id="logoutBtn">Sair</button>`;
+    $('logoutBtn').onclick=logoutProfessor;
+  }else{
+    $('professorBox').innerHTML=`<button class="btn secondary" id="loginBtn">Entrar / Criar conta</button>`;
+    $('loginBtn').onclick=()=>openAuthModal();
+  }
+  $('saveGameWrap').classList.toggle('hidden',!professor);
+  $('saveGameHint').classList.toggle('hidden',!!professor);
+  if(!professor) $('saveGameCheck').checked=false;
+}
+
+async function checkProfessorSession(){
+  try{
+    const r=await fetch('/api/professor/me');
+    const data=await r.json();
+    professor=data.ok?{nome:data.nome,email:data.email}:null;
+  }catch(e){ professor=null; }
+  renderProfessorBox();
+  if(professor && !$('savedPanel').classList.contains('hidden')) loadSavedGames();
+}
+
+function openAuthModal(){
+  $('authModal').classList.remove('hidden');
+  $('authStatus').textContent='';
+}
+$('authClose').onclick=()=>$('authModal').classList.add('hidden');
+$('authTabLogin').onclick=()=>{
+  $('authTabLogin').className='btn primary';$('authTabCadastro').className='btn secondary';
+  $('authLoginForm').classList.remove('hidden');$('authCadastroForm').classList.add('hidden');
+};
+$('authTabCadastro').onclick=()=>{
+  $('authTabCadastro').className='btn primary';$('authTabLogin').className='btn secondary';
+  $('authCadastroForm').classList.remove('hidden');$('authLoginForm').classList.add('hidden');
+};
+
+$('loginSubmit').onclick=async()=>{
+  const email=$('loginEmail').value.trim();
+  const senha=$('loginSenha').value;
+  if(!email||!senha){$('authStatus').textContent='Preencha e-mail e senha.';$('authStatus').className='student-msg error';return;}
+  $('authStatus').textContent='Entrando…';$('authStatus').className='student-msg';
+  try{
+    const r=await fetch('/api/professor/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,senha})});
+    const data=await r.json();
+    if(!r.ok){$('authStatus').textContent=data.error||'Não foi possível entrar.';$('authStatus').className='student-msg error';return;}
+    professor={nome:data.nome,email:data.email};
+    renderProfessorBox();
+    $('authModal').classList.add('hidden');
+    if(!$('savedPanel').classList.contains('hidden')) loadSavedGames();
+  }catch(e){$('authStatus').textContent='Erro ao conectar com o servidor.';$('authStatus').className='student-msg error';}
+};
+
+$('cadSubmit').onclick=async()=>{
+  const nome=$('cadNome').value.trim();
+  const email=$('cadEmail').value.trim();
+  const senha=$('cadSenha').value;
+  if(!nome||!email||!senha){$('authStatus').textContent='Preencha todos os campos.';$('authStatus').className='student-msg error';return;}
+  $('authStatus').textContent='Criando conta…';$('authStatus').className='student-msg';
+  try{
+    const r=await fetch('/api/professor/cadastro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome,email,senha})});
+    const data=await r.json();
+    if(!r.ok){$('authStatus').textContent=data.error||'Não foi possível criar a conta.';$('authStatus').className='student-msg error';return;}
+    professor={nome:data.nome,email:data.email};
+    renderProfessorBox();
+    $('authModal').classList.add('hidden');
+  }catch(e){$('authStatus').textContent='Erro ao conectar com o servidor.';$('authStatus').className='student-msg error';}
+};
+
+async function logoutProfessor(){
+  try{ await fetch('/api/professor/logout',{method:'POST'}); }catch(e){}
+  professor=null;
+  renderProfessorBox();
+  $('savedList').innerHTML='';
+}
+
+async function loadSavedGames(){
+  if(!professor){
+    $('savedList').innerHTML='<p class="student-msg">Entre na sua conta (canto superior direito) pra ver seus jogos salvos.</p>';
+    return;
+  }
+  $('savedList').innerHTML='<p class="muted">Carregando…</p>';
+  try{
+    const r=await fetch('/api/professor/jogos');
+    if(!r.ok)throw new Error('jogos');
+    const jogos=await r.json();
+    if(!jogos.length){$('savedList').innerHTML='<p class="muted">Você ainda não salvou nenhum jogo. Crie perguntas na aba "Criar minhas perguntas" e marque a opção de salvar.</p>';return;}
+    $('savedList').innerHTML=jogos.map(j=>`
+      <div class="card" style="padding:16px;margin:10px 0;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div><strong>${esc(j.tema)}</strong><br><small class="muted">${esc(j.disciplina)} · ${j.perguntas.length} pergunta(s)</small></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn primary" data-play="${esc(j.id)}">▶ Jogar agora</button>
+          <button class="btn secondary" data-del="${esc(j.id)}">🗑</button>
+        </div>
+      </div>`).join('');
+    $('savedList').querySelectorAll('[data-play]').forEach(btn=>{
+      btn.onclick=()=>{
+        const jogo=jogos.find(j=>j.id===btn.dataset.play);
+        if(!jogo)return;
+        sendAction('create_custom',{disciplina:jogo.disciplina,tema:jogo.tema,professor:professor.nome,perguntas:jogo.perguntas});
+      };
+    });
+    $('savedList').querySelectorAll('[data-del]').forEach(btn=>{
+      btn.onclick=async()=>{
+        if(!confirm('Excluir esse jogo salvo?'))return;
+        await fetch('/api/professor/jogos/'+encodeURIComponent(btn.dataset.del),{method:'DELETE'});
+        loadSavedGames();
+      };
+    });
+  }catch(e){
+    $('savedList').innerHTML='<p class="student-msg error">Não foi possível carregar seus jogos salvos.</p>';
+  }
+}
 
 // Mantém a conexão viva: alguns servidores derrubam WebSockets parados por
 // muito tempo — e no painel do professor é comum ficar minutos parado numa
@@ -224,16 +380,26 @@ $('create').disabled=true;
 $('create').onclick=()=>{if(selectedTopicId)sendAction('create',{topicId:selectedTopicId});};
 
 // ---- Alternância entre "banco pronto" e "criar minhas perguntas" ----
+function selectTab(tab){
+  $('tabBank').className=tab==='bank'?'btn primary':'btn secondary';
+  $('tabCustom').className=tab==='custom'?'btn primary':'btn secondary';
+  $('tabSaved').className=tab==='saved'?'btn primary':'btn secondary';
+  $('bankPanel').classList.toggle('hidden',tab!=='bank');
+  $('customPanel').classList.toggle('hidden',tab!=='custom');
+  $('savedPanel').classList.toggle('hidden',tab!=='saved');
+}
 $('tabBank').onclick=()=>{
-  $('tabBank').className='btn primary';$('tabCustom').className='btn secondary';
-  $('bankPanel').classList.remove('hidden');$('customPanel').classList.add('hidden');
+  selectTab('bank');
   $('questionsPill').textContent='10 questões';
 };
 $('tabCustom').onclick=()=>{
-  $('tabCustom').className='btn primary';$('tabBank').className='btn secondary';
-  $('customPanel').classList.remove('hidden');$('bankPanel').classList.add('hidden');
+  selectTab('custom');
   if(!$('customQuestions').children.length) buildCustomForm(Number($('customQtd').value)||10);
   updateQuestionsPill();
+};
+$('tabSaved').onclick=()=>{
+  selectTab('saved');
+  loadSavedGames();
 };
 
 $('customDisciplina').onchange=()=>{
@@ -281,7 +447,7 @@ function collectCustomQuestions(){
   return perguntas.length?perguntas:null;
 }
 
-$('createCustom').onclick=()=>{
+$('createCustom').onclick=async()=>{
   const statusEl=$('customStatus');
   let disciplina=$('customDisciplina').value;
   if(disciplina==='__custom__'){
@@ -289,12 +455,21 @@ $('createCustom').onclick=()=>{
     if(!disciplina){statusEl.textContent='Digite o nome da nova matéria.';statusEl.className='student-msg error';return;}
   }
   const tema=$('customTema').value.trim();
-  const professor=$('customProfessor').value.trim();
+  const nomeProfessor=$('customProfessor').value.trim();
   if(!tema){statusEl.textContent='Digite o tema da partida.';statusEl.className='student-msg error';return;}
   const perguntas=collectCustomQuestions();
   if(!perguntas){statusEl.textContent='Preencha todas as perguntas, as 4 alternativas de cada uma, e marque a correta.';statusEl.className='student-msg error';return;}
+
+  if(professor && $('saveGameCheck').checked){
+    statusEl.textContent='Salvando na sua conta…';statusEl.className='student-msg';
+    try{
+      const r=await fetch('/api/professor/jogos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({disciplina,tema,perguntas})});
+      if(!r.ok){const d=await r.json();statusEl.textContent=d.error||'Não foi possível salvar o jogo.';statusEl.className='student-msg error';return;}
+    }catch(e){statusEl.textContent='Não foi possível salvar o jogo (erro de conexão).';statusEl.className='student-msg error';return;}
+  }
+
   statusEl.textContent='Criando sala…';statusEl.className='student-msg';
-  sendAction('create_custom',{disciplina,tema,professor,perguntas});
+  sendAction('create_custom',{disciplina,tema,professor:nomeProfessor,perguntas});
 };
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -314,4 +489,5 @@ function render(st){
 
 load();
 connect();
+checkProfessorSession();
 </script></body></html>
