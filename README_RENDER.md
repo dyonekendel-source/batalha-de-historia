@@ -1,4 +1,4 @@
-# Batalha de História — publicação no Render
+# Batalha de Estudo — publicação no Render
 
 ## 1. Coloque esta pasta em um repositório GitHub
 A pasta que contém `server.py`, `questions.json`, `requirements.txt` e `render.yaml` deve ser a raiz do repositório.
