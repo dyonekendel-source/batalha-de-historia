@@ -1,4 +1,4 @@
-# Batalha de História — MVP funcional
+# Batalha de Estudo — MVP funcional
 
 ## O que esta versão corrige
 - O banco `questions.json` está ligado ao servidor.
