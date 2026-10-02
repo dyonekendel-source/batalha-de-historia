@@ -389,6 +389,201 @@ def qr(request: Request, room: str):
 
 
 # ---------------------------------------------------------------------------
+# Contas de professor: cadastro/login de verdade (com senha), separado do
+# login único do admin. Permite que um professor salve as perguntas que ele
+# cria (em "Criar minhas perguntas") e depois abra uma sala direto a partir
+# delas, sem precisar digitar tudo de novo. Mesmo padrão de sessão assinada
+# (HMAC) do admin, mas o token também carrega o id do professor.
+# ---------------------------------------------------------------------------
+PROFESSOR_SESSION_TTL = 60 * 60 * 24 * 180  # 180 dias
+
+
+def hash_senha(senha, salt=None):
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", senha.encode(), salt.encode(), 200_000).hex()
+    return salt, digest
+
+
+def verifica_senha(senha, salt, digest_esperado):
+    _, digest = hash_senha(senha, salt)
+    return hmac.compare_digest(digest, digest_esperado)
+
+
+def make_professor_token(professor_id):
+    expires = str(int(time.time()) + PROFESSOR_SESSION_TTL)
+    payload = f"{professor_id}.{expires}"
+    sig = hmac.new(_admin_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def verify_professor_token(token):
+    if not token or token.count(".") != 2:
+        return None
+    professor_id, expires, sig = token.split(".")
+    payload = f"{professor_id}.{expires}"
+    expected = hmac.new(_admin_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        if int(expires) <= time.time():
+            return None
+    except ValueError:
+        return None
+    return professor_id
+
+
+def require_professor(professor_session: str | None = Cookie(default=None)):
+    professor_id = verify_professor_token(professor_session)
+    if not professor_id:
+        raise HTTPException(status_code=401, detail="Você precisa entrar na sua conta de professor.")
+    return professor_id
+
+
+def find_professor_by_email(email):
+    email = email.strip().lower()
+    for p in load_records("professores"):
+        if p.get("email", "").lower() == email:
+            return p
+    return None
+
+
+def find_professor_by_id(professor_id):
+    for p in load_records("professores"):
+        if p.get("id") == professor_id:
+            return p
+    return None
+
+
+class ProfessorCadastroRequest(BaseModel):
+    nome: str
+    email: str
+    senha: str
+
+
+class ProfessorLoginRequest(BaseModel):
+    email: str
+    senha: str
+
+
+def _set_professor_cookie(response, professor_id):
+    response.set_cookie(
+        "professor_session",
+        make_professor_token(professor_id),
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=PROFESSOR_SESSION_TTL,
+    )
+
+
+@app.post("/api/professor/cadastro")
+def professor_cadastro(req: ProfessorCadastroRequest):
+    nome = req.nome.strip()
+    email = req.email.strip().lower()
+    senha = req.senha
+    if len(nome) < 2:
+        return JSONResponse({"error": "Digite seu nome."}, status_code=400)
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return JSONResponse({"error": "Digite um e-mail válido."}, status_code=400)
+    if len(senha) < 6:
+        return JSONResponse({"error": "A senha precisa ter pelo menos 6 caracteres."}, status_code=400)
+    if find_professor_by_email(email):
+        return JSONResponse({"error": "Já existe uma conta com esse e-mail. Tente entrar em vez de cadastrar."}, status_code=409)
+
+    salt, digest = hash_senha(senha)
+    entry = save_record("professores", {
+        "nome": nome,
+        "email": email,
+        "senha_salt": salt,
+        "senha_hash": digest,
+    })
+    response = JSONResponse({"ok": True, "nome": nome, "email": email})
+    _set_professor_cookie(response, entry["id"])
+    return response
+
+
+@app.post("/api/professor/login")
+def professor_login(req: ProfessorLoginRequest):
+    professor = find_professor_by_email(req.email)
+    if not professor or not verifica_senha(req.senha, professor["senha_salt"], professor["senha_hash"]):
+        return JSONResponse({"error": "E-mail ou senha incorretos."}, status_code=401)
+    response = JSONResponse({"ok": True, "nome": professor["nome"], "email": professor["email"]})
+    _set_professor_cookie(response, professor["id"])
+    return response
+
+
+@app.post("/api/professor/logout")
+def professor_logout():
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("professor_session")
+    return response
+
+
+@app.get("/api/professor/me")
+def professor_me(professor_session: str | None = Cookie(default=None)):
+    professor_id = verify_professor_token(professor_session)
+    if not professor_id:
+        return JSONResponse({"ok": False})
+    professor = find_professor_by_id(professor_id)
+    if not professor:
+        return JSONResponse({"ok": False})
+    return JSONResponse({"ok": True, "nome": professor["nome"], "email": professor["email"]})
+
+
+@app.get("/api/professor/jogos")
+def professor_jogos(professor_id: str = Depends(require_professor)):
+    # Só os jogos salvos por ESTE professor (nunca de outros).
+    todos = load_records("jogos_salvos")
+    meus = [j for j in todos if j.get("professor_id") == professor_id]
+    return JSONResponse(meus[:200])
+
+
+class SalvarJogoRequest(BaseModel):
+    disciplina: str
+    tema: str
+    perguntas: list
+
+
+@app.post("/api/professor/jogos")
+def professor_salvar_jogo(req: SalvarJogoRequest, professor_id: str = Depends(require_professor)):
+    try:
+        perguntas = validate_custom_perguntas(req.perguntas)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    tema = req.tema.strip()
+    disciplina = req.disciplina.strip()
+    if not tema or not disciplina:
+        return JSONResponse({"error": "Informe a disciplina e o tema."}, status_code=400)
+    entry = save_record("jogos_salvos", {
+        "professor_id": professor_id,
+        "disciplina": disciplina,
+        "tema": tema,
+        "perguntas": perguntas,
+    })
+    return JSONResponse({"ok": True, "jogo": entry})
+
+
+@app.delete("/api/professor/jogos/{jogo_id}")
+def professor_excluir_jogo(jogo_id: str, professor_id: str = Depends(require_professor)):
+    db = get_firestore_db()
+    if db is not None:
+        doc = db.collection("jogos_salvos").document(jogo_id).get()
+        if not doc.exists or doc.to_dict().get("professor_id") != professor_id:
+            return JSONResponse({"error": "Jogo não encontrado."}, status_code=404)
+        db.collection("jogos_salvos").document(jogo_id).delete()
+        return JSONResponse({"ok": True})
+
+    path = ROOT / "jogos_salvos.json"
+    items = load_records("jogos_salvos")
+    alvo = next((j for j in items if j.get("id") == jogo_id and j.get("professor_id") == professor_id), None)
+    if not alvo:
+        return JSONResponse({"error": "Jogo não encontrado."}, status_code=404)
+    items = [j for j in items if j.get("id") != jogo_id]
+    path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # IA educacional (Estudativa IA): usa a API gratuita da Groq (modelos Llama)
 # para tirar dúvidas dos alunos, alinhado à BNCC do 6º ao 9º ano. A chave fica
 # só aqui no servidor (variável de ambiente GROQ_API_KEY) — nunca é exposta
