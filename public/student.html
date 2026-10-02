@@ -1,4 +1,4 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>Aluno — Batalha de História</title><link rel="stylesheet" href="/static/style.css"></head><body class="student-body"><main class="center"><div class="card student-card"><div class="logo">⚔️</div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Entre na partida</h1><section id="join"><input id="name" maxlength="24" placeholder="Seu nome ou apelido"><input id="room" maxlength="4" placeholder="Código da sala" style="text-transform:uppercase"><button class="btn primary wide" onclick="join()">Entrar na sala</button><p id="err" class="error"></p></section><section id="play" class="hidden"><div id="reconnectBanner" class="student-msg hidden" style="margin-bottom:10px"></div><div class="mobile-top"><span id="progress"></span><strong id="score"></strong></div><div id="qwrap"></div><div id="answers" class="answers mobile"></div><div id="msg" class="student-msg"></div></section></div></main><script>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>Aluno — Batalha de Estudo</title><link rel="stylesheet" href="/static/style.css"></head><body class="student-body"><main class="center"><div class="card student-card"><div class="logo">⚔️</div><span class="eyebrow">BATALHA DE ESTUDO</span><h1>Entre na partida</h1><section id="join"><input id="name" maxlength="24" placeholder="Seu nome ou apelido"><input id="room" maxlength="4" placeholder="Código da sala" style="text-transform:uppercase"><button class="btn primary wide" onclick="join()">Entrar na sala</button><p id="err" class="error"></p></section><section id="play" class="hidden"><div class="student-topbar"><button class="btn" onclick="leaveRoom()">← Sair da sala</button></div><div id="reconnectBanner" class="student-msg hidden" style="margin-bottom:10px"></div><div class="mobile-top"><span id="progress"></span><strong id="score"></strong></div><div id="qwrap"></div><div id="answers" class="answers mobile"></div><div id="msg" class="student-msg"></div></section></div></main><script>
 // Token de identidade do aluno: gerado uma vez e guardado no aparelho. É o
 // que permite reconectar na mesma sala, com o mesmo nome e a mesma
 // pontuação, se a conexão cair no meio da partida — mesmo que a tela seja
@@ -85,6 +85,25 @@ function connect(){
 
   ws.onmessage = e => {
     const st = JSON.parse(e.data);
+    if(st.type === 'left'){
+      // Confirmação de que a própria saída (botão "Sair da sala") foi
+      // processada pelo servidor. A tela já foi trocada na hora do clique;
+      // não precisa fazer mais nada aqui.
+      return;
+    }
+    if(st.type === 'closed'){
+      // O professor encerrou a sala pra todo mundo. Sem isso, quem estivesse
+      // numa tela de pergunta/resultado/pódio ficaria travado ali pra sempre,
+      // já que o servidor simplesmente parava de mandar atualizações.
+      if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
+      hasJoined = false;
+      clearSession();
+      setReconnectBanner('');
+      document.getElementById('play').classList.add('hidden');
+      document.getElementById('join').classList.remove('hidden');
+      document.getElementById('err').textContent = st.message || 'A sala foi encerrada pelo professor.';
+      return;
+    }
     if(st.type === 'error'){
       if(hasJoined){
         // Erro numa tentativa de reconexão/restauração (ex.: a sala não existe
@@ -157,6 +176,19 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('online', () => {
   if(hasJoined && (!ws || ws.readyState===WebSocket.CLOSED)) connect();
 });
+
+function leaveRoom(){
+  if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer=null; }
+  hasJoined = false;
+  clearSession();
+  setReconnectBanner('');
+  if(ws && ws.readyState===WebSocket.OPEN){
+    ws.send(JSON.stringify({action:'leave'}));
+  }
+  document.getElementById('play').classList.add('hidden');
+  document.getElementById('join').classList.remove('hidden');
+  document.getElementById('err').textContent = '';
+}
 
 function answer(i){ws.send(JSON.stringify({action:'answer',index:i}));document.querySelectorAll('.answerbtn').forEach(b=>b.disabled=true);document.getElementById('msg').textContent='✓ Resposta enviada. Aguarde o professor.'}
 </script></body></html>
