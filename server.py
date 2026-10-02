@@ -1,4 +1,4 @@
-import base64, io, json, os, random, re, string, time, unicodedata, uuid
+import base64, hashlib, hmac, io, json, os, random, re, secrets, string, time, unicodedata, uuid
 from pathlib import Path
 
 
@@ -6,15 +6,14 @@ def _sem_acento(s):
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
 import qrcode
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 ROOT = Path(__file__).parent
 DATA = json.loads((ROOT / "questions.json").read_text(encoding="utf-8"))
-CONTRIB_PATH = ROOT / "contribuicoes_pendentes.json"
 
 # Base de conhecimento verificada: os textos dos "Resumos Ativos" do site
 # principal (estudativa.com.br), já revisados e alinhados à BNCC. A Estudativa
@@ -81,7 +80,7 @@ DISCIPLINAS = [
     "quimica", "fisica", "biologia", "filosofia", "sociologia", "outros",
 ]
 
-app = FastAPI(title="Batalha de História")
+app = FastAPI(title="Batalha de Estudo")
 
 # CORS: além do próprio jogo, este servidor também atende o endpoint /api/tutor
 # (chamado pelo site principal, estudativa.com.br, que é hospedado à parte no
@@ -124,43 +123,109 @@ def pick(topic):
     return shuffle_questions(selected)
 
 
-def load_contribuicoes():
+LOCAL_RECORDS_MAX = 5000  # limite por coleção quando não há Firestore configurado
+
+
+def load_records(collection):
+    """Lê todos os registros de uma 'coleção' (perguntas de IA, jogos jogados,
+    contribuições de professores etc). Usa Firestore se configurado, senão cai
+    pra um arquivo JSON local (mesmo padrão já usado para as contribuições)."""
     db = get_firestore_db()
     if db is not None:
-        docs = db.collection("contribuicoes_pendentes").stream()
+        docs = db.collection(collection).stream()
         items = [d.to_dict() for d in docs]
         # Mais recentes primeiro (criadoEm é ISO 8601, então a ordenação
         # alfabética já corresponde à ordenação cronológica).
         items.sort(key=lambda x: x.get("criadoEm", ""), reverse=True)
         return items
 
-    if not CONTRIB_PATH.exists():
+    path = ROOT / f"{collection}.json"
+    if not path.exists():
         return []
     try:
-        return json.loads(CONTRIB_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return []
 
 
-def save_contribuicao(disciplina, tema, professor, perguntas):
+def save_record(collection, data):
+    """Grava um novo registro numa 'coleção'. Mesmo padrão: Firestore se
+    configurado (sobrevive a redeploys do Render), senão arquivo JSON local
+    (não sobrevive a um redeploy, mas funciona enquanto o servidor estiver no ar)."""
     entry = {
         "id": uuid.uuid4().hex[:8],
-        "disciplina": disciplina,
-        "tema": tema,
-        "professor": professor or "",
         "criadoEm": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "perguntas": perguntas,
+        **data,
     }
 
     db = get_firestore_db()
     if db is not None:
-        db.collection("contribuicoes_pendentes").document(entry["id"]).set(entry)
+        db.collection(collection).document(entry["id"]).set(entry)
         return entry
 
-    items = load_contribuicoes()
+    path = ROOT / f"{collection}.json"
+    items = load_records(collection)
     items.append(entry)
-    CONTRIB_PATH.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    if len(items) > LOCAL_RECORDS_MAX:
+        items = items[-LOCAL_RECORDS_MAX:]
+    path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
     return entry
+
+
+def load_contribuicoes():
+    return load_records("contribuicoes_pendentes")
+
+
+def save_contribuicao(disciplina, tema, professor, perguntas):
+    return save_record("contribuicoes_pendentes", {
+        "disciplina": disciplina,
+        "tema": tema,
+        "professor": professor or "",
+        "perguntas": perguntas,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Login do admin (só o dono do site): senha única definida na variável de
+# ambiente ADMIN_PASSWORD do Render. Sem banco de usuários — é só uma conta.
+# A sessão é um token assinado (HMAC) guardado num cookie httpOnly, sem
+# precisar de banco de dados pra sessões.
+# ---------------------------------------------------------------------------
+ADMIN_SESSION_TTL = 60 * 60 * 24 * 14  # 14 dias
+_RUNTIME_SECRET = secrets.token_hex(32)  # usado só se ADMIN_SECRET não estiver configurada
+
+
+def _admin_secret():
+    # Se ADMIN_SECRET não estiver configurada no Render, usa uma gerada ao
+    # acaso quando o processo sobe — funciona, mas invalida sessões antigas
+    # a cada reinício/redeploy. Pra sessões mais duradouras, configure
+    # ADMIN_SECRET no Render (qualquer string aleatória longa serve).
+    return os.environ.get("ADMIN_SECRET") or _RUNTIME_SECRET
+
+
+def make_session_token():
+    expires = str(int(time.time()) + ADMIN_SESSION_TTL)
+    sig = hmac.new(_admin_secret().encode(), expires.encode(), hashlib.sha256).hexdigest()
+    return f"{expires}.{sig}"
+
+
+def verify_session_token(token):
+    if not token or "." not in token:
+        return False
+    expires, _, sig = token.partition(".")
+    expected = hmac.new(_admin_secret().encode(), expires.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return False
+    try:
+        return int(expires) > time.time()
+    except ValueError:
+        return False
+
+
+def require_admin(admin_session: str | None = Cookie(default=None)):
+    if not verify_session_token(admin_session):
+        raise HTTPException(status_code=401, detail="Não autenticado.")
+    return True
 
 
 def validate_custom_perguntas(perguntas):
@@ -239,9 +304,9 @@ def topics():
     ])
 
 
-@app.get("/revisar.html")
-def revisar():
-    return FileResponse(ROOT / "public/revisar.html")
+@app.get("/admin.html")
+def admin_page():
+    return FileResponse(ROOT / "public/admin.html")
 
 
 @app.get("/api/disciplinas")
@@ -249,10 +314,66 @@ def disciplinas():
     return JSONResponse(DISCIPLINAS)
 
 
-@app.get("/api/contribuicoes")
-def contribuicoes():
-    # Lista tudo que professores criaram na hora, ainda não revisado.
-    # Sem autenticação (o app inteiro não tem login) — não exponha esse link publicamente.
+@app.get("/revisar.html")
+def revisar_legado():
+    # Página antiga, sem senha. Agora existe /admin.html com login de verdade.
+    return RedirectResponse("/admin.html")
+
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+@app.post("/api/admin/login")
+def admin_login(req: LoginRequest):
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    if not admin_password:
+        return JSONResponse(
+            {"error": "Login ainda não configurado neste servidor (falta a variável ADMIN_PASSWORD no Render)."},
+            status_code=503,
+        )
+    if not hmac.compare_digest(req.password, admin_password):
+        return JSONResponse({"error": "Senha incorreta."}, status_code=401)
+
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        "admin_session",
+        make_session_token(),
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=ADMIN_SESSION_TTL,
+    )
+    return response
+
+
+@app.post("/api/admin/logout")
+def admin_logout():
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("admin_session")
+    return response
+
+
+@app.get("/api/admin/check")
+def admin_check(admin_session: str | None = Cookie(default=None)):
+    return JSONResponse({"ok": verify_session_token(admin_session)})
+
+
+@app.get("/api/admin/ia-perguntas")
+def admin_ia_perguntas(_: bool = Depends(require_admin)):
+    # Perguntas feitas à Estudativa IA (pelo site principal), com a resposta dada.
+    return JSONResponse(load_records("ia_perguntas")[:500])
+
+
+@app.get("/api/admin/jogos")
+def admin_jogos(_: bool = Depends(require_admin)):
+    # Partidas criadas (banco de questões oficial ou personalizadas por professor).
+    return JSONResponse(load_records("jogos_partidas")[:500])
+
+
+@app.get("/api/admin/contribuicoes")
+def admin_contribuicoes(_: bool = Depends(require_admin)):
+    # Perguntas que professores criaram na hora, ainda não revisadas.
     return JSONResponse(load_contribuicoes())
 
 
@@ -434,6 +555,7 @@ async def tutor(req: TutorRequest):
 
     # Filtro de segurança antes de qualquer chamada à IA (veja comentário acima).
     if CRISIS_RE.search(_sem_acento(message.lower())):
+        save_record("ia_perguntas", {"pergunta": message, "resposta": CRISIS_REPLY, "alerta": True})
         return JSONResponse({"reply": CRISIS_REPLY})
 
     # mantém só as últimas trocas, pra não deixar a conversa gigante (custo/latência)
@@ -472,6 +594,11 @@ async def tutor(req: TutorRequest):
             )
         data = resp.json()
         reply = data["choices"][0]["message"]["content"]
+        save_record("ia_perguntas", {
+            "pergunta": message,
+            "resposta": reply,
+            "comReferencia": bool(refs),
+        })
         return JSONResponse({"reply": reply})
     except Exception as e:
         print("Estudativa IA: exceção ao chamar a Groq:", repr(e))
@@ -604,6 +731,13 @@ async def ws_endpoint(ws: WebSocket):
     role = None
     room = None
     player_id = None
+    # Identifica esta conexão especificamente (não só o jogador). Necessário
+    # porque, quando o aluno atualiza a página, a conexão antiga só é avisada
+    # do fechamento DEPOIS que a nova já reconectou — sem isso, o evento de
+    # desconexão "atrasado" da conexão antiga apagava ou marcava como offline
+    # o jogador que acabara de voltar, deixando a tela dele travada (sem
+    # receber mais nenhuma atualização).
+    conn_id = uuid.uuid4().hex
 
     try:
         while True:
@@ -633,6 +767,12 @@ async def ws_endpoint(ws: WebSocket):
                 }
                 rooms[room_id] = room
                 role = "teacher"
+                save_record("jogos_partidas", {
+                    "tipo": "banco",
+                    "tema": topic["name"],
+                    "disciplina": topic.get("disciplina", "historia"),
+                    "sala": room_id,
+                })
                 await send(ws, {
                     "type": "created",
                     "room": room_id,
@@ -673,6 +813,13 @@ async def ws_endpoint(ws: WebSocket):
                 }
                 rooms[room_id] = room
                 role = "teacher"
+                save_record("jogos_partidas", {
+                    "tipo": "personalizado",
+                    "tema": tema,
+                    "disciplina": disciplina,
+                    "professor": professor or "",
+                    "sala": room_id,
+                })
                 await send(ws, {
                     "type": "created",
                     "room": room_id,
@@ -723,6 +870,7 @@ async def ws_endpoint(ws: WebSocket):
                     player = target["players"][existing_id]
                     player["ws"] = ws
                     player["connected"] = True
+                    player["conn_id"] = conn_id
                     if token:
                         player["token"] = token
                     player_id = existing_id
@@ -741,6 +889,7 @@ async def ws_endpoint(ws: WebSocket):
                     player["ws"] = ws
                     player["connected"] = True
                     player["name"] = name
+                    player["conn_id"] = conn_id
                 else:
                     target["players"][player_id] = {
                         "name": name,
@@ -753,6 +902,7 @@ async def ws_endpoint(ws: WebSocket):
                         "connected": True,
                         "token": token,
                         "ws": ws,
+                        "conn_id": conn_id,
                     }
                 room = target
                 role = "student"
@@ -805,6 +955,27 @@ async def ws_endpoint(ws: WebSocket):
                 room["phase"] = "final"
                 await broadcast(room)
 
+            elif action == "leave" and role == "student" and room:
+                # O próprio aluno pediu pra sair da sala (botão "Sair da
+                # sala"), em vez de só cair/fechar a aba. Remove de vez (não
+                # precisa preservar pontuação pra reconexão, já que foi uma
+                # saída intencional) e avisa o professor.
+                if player_id in room["players"]:
+                    del room["players"][player_id]
+                    await broadcast(room)
+                await send(ws, {"type": "left"})
+                room, role, player_id = None, None, None
+
+            elif action == "end_room" and role == "teacher" and room:
+                # Professor encerra a sala pra todo mundo, em qualquer fase
+                # (lobby, pergunta, resultado ou pódio) — não precisa esperar
+                # chegar ao fim das questões pra poder fechar.
+                for p in list(room["players"].values()):
+                    await send(p["ws"], {"type": "closed", "message": "O professor encerrou a sala."})
+                rooms.pop(room["id"], None)
+                await send(ws, {"type": "room_ended"})
+                room, role, player_id = None, None, None
+
             elif action == "ping":
                 # "Sinal de vida" enviado periodicamente pelo navegador (professor
                 # e aluno) só pra manter a conexão WebSocket ativa — serviços como
@@ -814,7 +985,19 @@ async def ws_endpoint(ws: WebSocket):
                 await send(ws, {"type": "pong"})
 
     except WebSocketDisconnect:
-        if role == "student" and room and player_id in room["players"]:
+        if (
+            role == "student"
+            and room
+            and player_id in room["players"]
+            and room["players"][player_id].get("conn_id") == conn_id
+        ):
+            # A checagem de conn_id acima evita um problema clássico de corrida:
+            # ao atualizar a página, o aviso de fechamento da conexão ANTIGA às
+            # vezes só chega depois que a NOVA conexão já reconectou o mesmo
+            # jogador. Sem essa checagem, esse aviso atrasado apagava (no
+            # lobby) ou marcava como desconectado (durante a partida) o
+            # jogador que tinha acabado de voltar — fazendo a tela dele travar,
+            # sem receber mais nenhuma atualização do servidor.
             if room["phase"] == "lobby":
                 # Ainda não começou: sair de verdade (não tem pontuação a preservar).
                 del room["players"][player_id]
@@ -827,5 +1010,5 @@ async def ws_endpoint(ws: WebSocket):
                 room["players"][player_id]["connected"] = False
                 room["players"][player_id]["ws"] = None
             await broadcast(room)
-        elif role == "teacher" and room:
+        elif role == "teacher" and room and room.get("id") in rooms:
             room["teacher"] = None
