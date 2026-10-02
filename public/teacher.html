@@ -1,4 +1,4 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de História</title><link rel="stylesheet" href="/static/style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE HISTÓRIA</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div id="roomBadge" class="badge">SEM SALA</div></header><section id="setup" class="card setup-card">
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Professor — Batalha de Estudo</title><link rel="stylesheet" href="/static/style.css"></head><body><main class="app"><header class="topbar"><div><span class="eyebrow">BATALHA DE ESTUDO</span><h1>Painel do Professor</h1><small class="author-credit">Desenvolvido pelo professor Dyone Kendel</small></div><div class="topbar-actions"><button id="endRoomBtn" class="btn secondary hidden" onclick="endRoom()">🚫 Encerrar sala</button><div id="roomBadge" class="badge">SEM SALA</div></div></header><section id="setup" class="card setup-card">
   <div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span id="questionsPill" class="pill">10 questões</span></div>
   <div class="rules" style="margin:0 0 24px">
     <button type="button" id="tabBank" class="btn primary" style="flex:1">📚 Usar banco pronto</button>
@@ -101,6 +101,7 @@ function connect(){
       room=m.room;
       $('setup').classList.add('hidden');
       $('game').classList.remove('hidden');
+      $('endRoomBtn').classList.remove('hidden');
       $('roomBadge').textContent='SALA '+room;
       $('code').textContent=room;
       fetch('/api/qr?room='+encodeURIComponent(room))
@@ -108,7 +109,16 @@ function connect(){
         .then(x=>$('qr').src='data:image/png;base64,'+x)
         .catch(()=>{});
     }else if(m.type==='state')render(m);
-    else if(m.type==='error'){
+    else if(m.type==='room_ended'){
+      // Confirmação de que a sala foi encerrada por este próprio professor
+      // (botão "Encerrar sala"): volta pra tela inicial pra já poder criar a
+      // próxima partida, sem precisar recarregar a página.
+      room=null;
+      $('endRoomBtn').classList.add('hidden');
+      $('game').classList.add('hidden');
+      $('setup').classList.remove('hidden');
+      setConnectionStatus('Sala encerrada. Escolha um tema para criar a próxima.');
+    }else if(m.type==='error'){
       const msg=m.message||'Ocorreu um erro.';
       // Se a aba de "criar minhas perguntas" está aberta, o erro (ex: sala
       // não pôde ser criada porque duas alternativas ficaram iguais) tem que
@@ -121,6 +131,12 @@ function connect(){
       }
     }
   };
+}
+
+function endRoom(){
+  if(!room)return;
+  if(!confirm('Encerrar a sala agora? Todos os alunos conectados serão desconectados imediatamente.'))return;
+  sendAction('end_room');
 }
 
 function sendAction(action, extra={}){
