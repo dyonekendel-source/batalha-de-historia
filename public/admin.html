@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel do admin — Estudativa</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .admin-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}
+  .admin-tab{border:1px solid var(--line);background:#0b1829;color:var(--muted);border-radius:999px;padding:10px 18px;font-weight:800;font-size:14px;cursor:pointer}
+  .admin-tab.selected{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .admin-item{border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin-bottom:14px;background:rgba(7,16,28,.48)}
+  .admin-item .meta{color:var(--muted);font-size:12px;margin-bottom:8px}
+  .admin-item .pergunta{font-weight:800;margin-bottom:8px}
+  .admin-item .resposta{color:var(--muted);white-space:pre-wrap;font-size:14px;line-height:1.5}
+  .admin-item.alerta{border-color:#ff7a7f}
+  .tag{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;margin-right:6px;color:var(--muted)}
+  .tag.alerta{color:#ff7a7f;border-color:#ff7a7f}
+  .topbar-admin{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+  #loginBox{max-width:420px;margin:90px auto;padding:36px}
+  #loginBox input{margin-bottom:14px}
+  #loginError{color:var(--danger);margin-bottom:10px;min-height:18px}
+  .stat-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px}
+  .stat-card{flex:1;min-width:140px;border:1px solid var(--line);border-radius:16px;padding:18px;background:rgba(7,16,28,.48);text-align:center}
+  .stat-card .num{font-size:32px;font-weight:900;color:var(--accent)}
+  .stat-card .label{color:var(--muted);font-size:13px;margin-top:4px}
+</style>
+</head>
+<body>
+<main class="app">
+
+  <section id="loginBox" class="card hidden">
+    <span class="eyebrow">Área restrita</span>
+    <h1 style="margin:6px 0 20px;font-size:26px">Painel do admin</h1>
+    <p id="loginError"></p>
+    <label for="pw">Senha</label>
+    <input id="pw" type="password" placeholder="Sua senha de admin" autocomplete="current-password">
+    <button class="btn primary wide" onclick="login()">Entrar</button>
+  </section>
+
+  <section id="dash" class="hidden">
+    <header class="topbar-admin">
+      <div>
+        <span class="eyebrow">Estudativa</span>
+        <h1 style="margin:6px 0 0;font-size:30px">Painel do admin</h1>
+      </div>
+      <button class="btn secondary" onclick="logout()">Sair</button>
+    </header>
+
+    <div class="stat-row" id="stats"></div>
+
+    <div class="admin-tabs">
+      <button class="admin-tab selected" data-tab="ia" onclick="selectTab('ia')">🤖 Perguntas à IA</button>
+      <button class="admin-tab" data-tab="jogos" onclick="selectTab('jogos')">🎮 Jogos criados</button>
+      <button class="admin-tab" data-tab="contrib" onclick="selectTab('contrib')">✍️ Perguntas de professores</button>
+    </div>
+
+    <section class="card" style="padding:24px">
+      <div id="content"><p class="muted">Carregando...</p></div>
+    </section>
+  </section>
+
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+let cache = {ia: null, jogos: null, contrib: null};
+let activeTab = 'ia';
+
+async function checkLogin(){
+  const r = await fetch('/api/admin/check');
+  const data = await r.json();
+  if (data.ok) { showDash(); } else { showLogin(); }
+}
+
+function showLogin(){
+  $('loginBox').classList.remove('hidden');
+  $('dash').classList.add('hidden');
+}
+
+function showDash(){
+  $('loginBox').classList.add('hidden');
+  $('dash').classList.remove('hidden');
+  loadAll();
+}
+
+async function login(){
+  const pw = $('pw').value;
+  $('loginError').textContent = '';
+  if (!pw) return;
+  try {
+    const r = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password: pw}),
+    });
+    const data = await r.json();
+    if (r.ok && data.ok) {
+      $('pw').value = '';
+      showDash();
+    } else {
+      $('loginError').textContent = data.error || 'Senha incorreta.';
+    }
+  } catch (e) {
+    $('loginError').textContent = 'Erro ao conectar com o servidor.';
+  }
+}
+$('pw') && $('pw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+async function logout(){
+  await fetch('/api/admin/logout', {method: 'POST'});
+  showLogin();
+}
+
+async function loadAll(){
+  const [ia, jogos, contrib] = await Promise.all([
+    fetch('/api/admin/ia-perguntas').then(r => r.ok ? r.json() : []),
+    fetch('/api/admin/jogos').then(r => r.ok ? r.json() : []),
+    fetch('/api/admin/contribuicoes').then(r => r.ok ? r.json() : []),
+  ]);
+  cache = {ia, jogos, contrib};
+  renderStats();
+  renderTab();
+}
+
+function renderStats(){
+  const totalPerguntasCriadas = (cache.contrib||[]).reduce((n,c)=>n+(c.perguntas||[]).length,0);
+  $('stats').innerHTML = `
+    <div class="stat-card"><div class="num">${cache.ia.length}</div><div class="label">Perguntas à IA</div></div>
+    <div class="stat-card"><div class="num">${cache.jogos.length}</div><div class="label">Jogos criados</div></div>
+    <div class="stat-card"><div class="num">${cache.contrib.length}</div><div class="label">Lotes de perguntas de professores</div></div>
+    <div class="stat-card"><div class="num">${totalPerguntasCriadas}</div><div class="label">Perguntas criadas (total)</div></div>
+  `;
+}
+
+function selectTab(tab){
+  activeTab = tab;
+  document.querySelectorAll('.admin-tab').forEach(b => b.classList.toggle('selected', b.dataset.tab === tab));
+  renderTab();
+}
+
+function renderTab(){
+  const el = $('content');
+  if (activeTab === 'ia') {
+    if (!cache.ia.length) { el.innerHTML = '<p class="muted">Nenhuma pergunta registrada ainda.</p>'; return; }
+    el.innerHTML = cache.ia.map(item => `
+      <div class="admin-item ${item.alerta ? 'alerta' : ''}">
+        <div class="meta">${esc(item.criadoEm)}${item.alerta ? ' <span class="tag alerta">⚠ alerta de crise</span>' : ''}${item.comReferencia ? ' <span class="tag">usou referência do site</span>' : ''}</div>
+        <div class="pergunta">❓ ${esc(item.pergunta)}</div>
+        <div class="resposta">${esc(item.resposta)}</div>
+      </div>
+    `).join('');
+  } else if (activeTab === 'jogos') {
+    if (!cache.jogos.length) { el.innerHTML = '<p class="muted">Nenhum jogo registrado ainda.</p>'; return; }
+    el.innerHTML = cache.jogos.map(item => `
+      <div class="admin-item">
+        <div class="meta">${esc(item.criadoEm)} · sala ${esc(item.sala)} <span class="tag">${item.tipo === 'personalizado' ? 'personalizado' : 'banco oficial'}</span></div>
+        <div class="pergunta">🎮 ${esc(item.tema)} <small class="muted" style="font-weight:400">(${esc(item.disciplina)})</small></div>
+        ${item.professor ? `<div class="resposta">Professor: ${esc(item.professor)}</div>` : ''}
+      </div>
+    `).join('');
+  } else if (activeTab === 'contrib') {
+    if (!cache.contrib.length) { el.innerHTML = '<p class="muted">Nenhuma contribuição pendente ainda.</p>'; return; }
+    el.innerHTML = cache.contrib.map(item => `
+      <div class="admin-item">
+        <div class="meta">${esc(item.criadoEm)}${item.professor ? ' · ' + esc(item.professor) : ''} · id ${esc(item.id)}</div>
+        <div class="pergunta">✍️ ${esc(item.disciplina)} — ${esc(item.tema)}</div>
+        <ol style="padding-left:20px;color:var(--muted);margin-top:10px">
+          ${item.perguntas.map(p => `<li style="margin-bottom:8px"><b style="color:var(--text)">${esc(p.question)}</b><br>${p.options.map(o => o === p.correct_answer ? `✅ ${esc(o)}` : `— ${esc(o)}`).join('<br>')}</li>`).join('')}
+        </ol>
+        <button class="btn secondary" style="margin-top:8px" onclick='copiar(${JSON.stringify(JSON.stringify(item))})'>📋 Copiar como JSON</button>
+      </div>
+    `).join('');
+  }
+}
+
+function copiar(json){
+  navigator.clipboard.writeText(json).then(()=>alert('Copiado!'));
+}
+
+checkLogin();
+</script>
+</body>
+</html>
