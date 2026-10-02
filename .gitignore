@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+
+# Dados gerados em tempo de execução no Render (sem Firestore configurado).
+# Não devem ser versionados — cada ambiente tem os seus.
+contribuicoes_pendentes.json
+ia_perguntas.json
+jogos_partidas.json
