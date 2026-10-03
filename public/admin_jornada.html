@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel Jornada do Aluno — Estudativa</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  #loginBox{max-width:420px;margin:90px auto;padding:36px}
+  #loginBox input{margin-bottom:14px}
+  #loginError{color:var(--danger);margin-bottom:10px;min-height:18px}
+  .topbar-admin{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+  .escola-row{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:12px 0;flex-wrap:wrap;gap:8px}
+  .aluno-row{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:10px 0;flex-wrap:wrap;gap:8px}
+  .mini{font-size:12px;color:var(--muted)}
+  .btn.small{padding:6px 12px;font-size:12px}
+  form.inline{border:1px dashed var(--line);border-radius:12px;padding:14px;margin-top:10px;max-width:420px}
+  form.inline label{font-size:12px;color:var(--muted);display:block;margin-top:8px}
+  form.inline input{width:100%;margin-top:3px}
+  table.rank{width:100%;border-collapse:collapse;margin-top:10px}
+  table.rank th, table.rank td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+  select.escolaFiltro{margin-top:10px}
+</style>
+</head>
+<body>
+<main class="app">
+
+  <section id="loginBox" class="card hidden">
+    <span class="eyebrow">Área restrita</span>
+    <h1 style="margin:6px 0 20px;font-size:26px">Painel Jornada do Aluno</h1>
+    <p id="loginError"></p>
+    <label for="pw">Senha de admin</label>
+    <input id="pw" type="password" placeholder="Sua senha de admin" autocomplete="current-password">
+    <button class="btn primary wide" onclick="login()">Entrar</button>
+    <p class="mini" style="margin-top:14px">Mesma senha de admin do painel do Batalha de Estudo.</p>
+  </section>
+
+  <section id="dash" class="hidden">
+    <header class="topbar-admin">
+      <div>
+        <span class="eyebrow">Jornada do Aluno</span>
+        <h1 style="margin:6px 0 0;font-size:30px">Escolas e alunos</h1>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn secondary" onclick="selectView('escolas')">🏫 Escolas</button>
+        <button class="btn secondary" onclick="selectView('alunos')">👥 Alunos</button>
+        <button class="btn secondary" onclick="selectView('ranking')">🏆 Ranking</button>
+        <button class="btn secondary" onclick="logout()">Sair</button>
+      </div>
+    </header>
+
+    <div id="viewEscolas">
+      <button class="btn primary" onclick="toggleNovaEscola()">+ Nova escola</button>
+      <form class="inline hidden" id="formNovaEscola">
+        <label>Nome da escola</label>
+        <input id="novaEscolaNome" placeholder="Ex: Escola Municipal João de Barro">
+        <button class="btn primary small" style="margin-top:10px" onclick="criarEscola(event)">Criar escola</button>
+      </form>
+      <div id="escolasList" style="margin-top:20px"></div>
+    </div>
+
+    <div id="viewAlunos" class="hidden">
+      <h2 style="margin-top:0">Alunos cadastrados</h2>
+      <div id="alunosList" style="margin-top:14px"></div>
+    </div>
+
+    <div id="viewRanking" class="hidden">
+      <h2 style="margin-top:0">Ranking</h2>
+      <label class="mini">Filtrar por escola</label><br>
+      <select class="escolaFiltro" id="rankEscolaFiltro" onchange="loadRanking()">
+        <option value="">Ranking geral (todas as escolas)</option>
+      </select>
+      <table class="rank">
+        <thead><tr><th>#</th><th>Nome</th><th>Escola</th><th>Classe atual</th><th>XP total</th><th>Lendárias</th></tr></thead>
+        <tbody id="rankingBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let cache = {escolas: [], alunos: []};
+
+function esc(s){ const d=document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+function showLogin(){ $('loginBox').classList.remove('hidden'); $('dash').classList.add('hidden'); }
+function showDash(){ $('loginBox').classList.add('hidden'); $('dash').classList.remove('hidden'); loadEscolas(); }
+
+async function checkLogin(){
+  try{
+    const r = await fetch('/api/admin/check');
+    const data = await r.json();
+    data.ok ? showDash() : showLogin();
+  }catch(e){ showLogin(); }
+}
+
+async function login(){
+  const pw = $('pw').value;
+  $('loginError').textContent = '';
+  try{
+    const r = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password: pw}),
+    });
+    const data = await r.json();
+    if (r.ok && data.ok) { $('pw').value = ''; showDash(); }
+    else { $('loginError').textContent = data.error || 'Senha incorreta.'; }
+  }catch(e){ $('loginError').textContent = 'Erro ao conectar com o servidor.'; }
+}
+$('pw') && $('pw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+async function logout(){
+  await fetch('/api/admin/logout', {method: 'POST'});
+  showLogin();
+}
+
+function selectView(v){
+  $('viewEscolas').classList.toggle('hidden', v !== 'escolas');
+  $('viewAlunos').classList.toggle('hidden', v !== 'alunos');
+  $('viewRanking').classList.toggle('hidden', v !== 'ranking');
+  if (v === 'alunos') loadAlunos();
+  if (v === 'ranking') loadRankingFiltro();
+}
+
+function toggleNovaEscola(){ $('formNovaEscola').classList.toggle('hidden'); }
+
+async function loadEscolas(){
+  const r = await fetch('/api/admin/jornada/escolas');
+  cache.escolas = r.ok ? await r.json() : [];
+  renderEscolas();
+}
+
+function renderEscolas(){
+  const el = $('escolasList');
+  if (!cache.escolas.length){ el.innerHTML = '<p class="muted">Nenhuma escola cadastrada ainda.</p>'; return; }
+  el.innerHTML = cache.escolas.map(e => `
+    <div class="escola-row">
+      <div><b>${esc(e.nome)}</b><br><span class="mini">${e.qtdAlunos} aluno(s)</span></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn secondary small" onclick="renomearEscola('${e.id}','${esc(e.nome)}')">Renomear</button>
+        <button class="btn secondary small" onclick="excluirEscola('${e.id}')">Excluir</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function criarEscola(ev){
+  ev.preventDefault();
+  const nome = $('novaEscolaNome').value.trim();
+  if (!nome) return alert('Dê um nome à escola.');
+  const r = await fetch('/api/admin/jornada/escolas', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({nome}),
+  });
+  const data = await r.json();
+  if (!r.ok) return alert(data.error || 'Erro ao criar escola.');
+  $('novaEscolaNome').value = ''; $('formNovaEscola').classList.add('hidden');
+  await loadEscolas();
+}
+
+async function renomearEscola(id, nomeAtual){
+  const nome = prompt('Novo nome da escola:', nomeAtual);
+  if (!nome || !nome.trim()) return;
+  const r = await fetch(`/api/admin/jornada/escolas/${id}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({nome: nome.trim()}),
+  });
+  if (!r.ok) { const data = await r.json(); return alert(data.error || 'Erro ao renomear.'); }
+  await loadEscolas();
+}
+
+async function excluirEscola(id){
+  if (!confirm('Excluir esta escola? Os alunos dela continuam com a conta, só ficam sem escola vinculada.')) return;
+  await fetch(`/api/admin/jornada/escolas/${id}`, {method:'DELETE'});
+  await loadEscolas();
+}
+
+async function loadAlunos(){
+  const r = await fetch('/api/admin/jornada/alunos');
+  cache.alunos = r.ok ? await r.json() : [];
+  renderAlunos();
+}
+
+function renderAlunos(){
+  const el = $('alunosList');
+  if (!cache.alunos.length){ el.innerHTML = '<p class="muted">Nenhum aluno cadastrado ainda.</p>'; return; }
+  el.innerHTML = cache.alunos.map(a => `
+    <div class="aluno-row">
+      <div><b>${esc(a.nome)}</b><br><span class="mini">${esc(a.email)} · ${esc(a.escola || 'sem escola')} · XP total: ${a.totalXp} · Lendárias: ${a.lendarias} · desde ${esc((a.criadoEm||'').slice(0,10))}</span></div>
+      <button class="btn secondary small" onclick="resetarSenha('${a.id}','${esc(a.nome)}')">Resetar senha</button>
+    </div>
+  `).join('');
+}
+
+async function resetarSenha(id, nome){
+  if (!confirm(`Gerar uma nova senha temporária para ${nome}?`)) return;
+  const r = await fetch(`/api/admin/jornada/alunos/${id}/resetar-senha`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}),
+  });
+  const data = await r.json();
+  if (!r.ok) return alert(data.error || 'Erro ao resetar senha.');
+  prompt(`Nova senha temporária de ${nome} (repasse para ele por fora, ex: WhatsApp). Peça para ele trocar depois de entrar:`, data.nova_senha);
+}
+
+async function loadRankingFiltro(){
+  if (!cache.escolas.length) await loadEscolas();
+  const sel = $('rankEscolaFiltro');
+  const atual = sel.value;
+  sel.innerHTML = '<option value="">Ranking geral (todas as escolas)</option>' +
+    cache.escolas.map(e => `<option value="${e.id}">${esc(e.nome)}</option>`).join('');
+  sel.value = atual || '';
+  loadRanking();
+}
+
+async function loadRanking(){
+  const escolaId = $('rankEscolaFiltro').value;
+  const url = escolaId ? `/api/jornada/ranking/escola/${escolaId}?limit=50` : '/api/jornada/ranking/geral?limit=50';
+  const r = await fetch(url);
+  const lista = r.ok ? await r.json() : [];
+  const body = $('rankingBody');
+  if (!lista.length){ body.innerHTML = '<tr><td colspan="6" class="mini">Nenhum aluno com progresso ainda.</td></tr>'; return; }
+  body.innerHTML = lista.map((row, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${esc(row.nome)}</td>
+      <td>${esc(row.escola || '—')}</td>
+      <td>${esc(row.classeAtual || '—')}</td>
+      <td>${row.totalXp}</td>
+      <td>${row.lendarias}</td>
+    </tr>
+  `).join('');
+}
+
+checkLogin();
+</script>
+</body>
+</html>
