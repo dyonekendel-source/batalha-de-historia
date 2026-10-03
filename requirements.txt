@@ -3,3 +3,4 @@ uvicorn[standard]>=0.30
 qrcode[pil]>=7.4
 firebase-admin>=6.5
 httpx>=0.27
+python-multipart>=0.0.9

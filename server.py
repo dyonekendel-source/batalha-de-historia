@@ -6,7 +6,7 @@ def _sem_acento(s):
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
 import qrcode
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -62,7 +62,13 @@ def get_firestore_db():
             else:
                 print("Firebase: nenhuma credencial configurada (FIREBASE_CREDENTIALS_PATH/FIREBASE_CREDENTIALS_JSON não definidas). Usando arquivo local por enquanto.")
                 return None  # idem — tenta de novo na próxima chamada
-            firebase_admin.initialize_app(cred)
+            # storageBucket: necessário pra guardar arquivos (apostilas/PDFs/
+            # imagens da GI Informática) no Firebase Storage em vez do disco
+            # local do Render (que é apagado a cada redeploy). Se
+            # FIREBASE_STORAGE_BUCKET não estiver definida, usa o bucket
+            # padrão do projeto (<project_id>.appspot.com).
+            bucket_name = os.environ.get("FIREBASE_STORAGE_BUCKET") or f"{cred.project_id}.appspot.com"
+            firebase_admin.initialize_app(cred, {"storageBucket": bucket_name})
 
         _firestore_db = firestore.client()
         _firestore_checked = True
@@ -72,6 +78,23 @@ def get_firestore_db():
         _firestore_db = None
         _firestore_checked = True  # erro de verdade (ex: JSON inválido) não adianta tentar de novo sozinho
     return _firestore_db
+
+
+def get_firebase_bucket():
+    """Bucket do Firebase Storage, pra guardar os arquivos (PDFs/imagens) que
+    o admin sobe na GI Informática — sobrevive a redeploys do Render, ao
+    contrário de salvar no disco local. Só funciona se get_firestore_db() já
+    tiver inicializado o app do Firebase com sucesso; senão, cai pro disco
+    local (veja gi_admin_upload)."""
+    if get_firestore_db() is None:
+        return None
+    try:
+        import firebase_admin
+        from firebase_admin import storage
+        return storage.bucket()
+    except Exception as e:
+        print("Firebase Storage indisponível, usando disco local:", repr(e))
+        return None
 
 # Mesma lista de disciplinas usada no site principal (Estudativa), pra manter
 # a taxonomia consistente entre o quiz do site e as perguntas criadas aqui.
@@ -310,6 +333,11 @@ def topics():
 @app.get("/admin.html")
 def admin_page():
     return FileResponse(ROOT / "public/admin.html")
+
+
+@app.get("/admin_gi.html")
+def admin_gi_page():
+    return FileResponse(ROOT / "public/admin_gi.html")
 
 
 @app.get("/api/disciplinas")
@@ -680,6 +708,472 @@ def professor_excluir_jogo(jogo_id: str, professor_id: str = Depends(require_pro
     items = [j for j in items if j.get("id") != jogo_id]
     path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
     return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# GI Informática: portal de aulas por módulo, com conta de aluno (cadastro
+# real, não só um nome) e um painel de admin (reusa o login único de admin já
+# existente — ADMIN_PASSWORD) pra criar módulos, aulas, subir apostilas/PDFs/
+# imagens e liberar (ou esconder) cada aula. Mesmo padrão load_records/
+# save_record das outras coleções: Firestore se configurado, senão JSON local
+# (o JSON local não sobrevive a um redeploy do Render — se o site for usar
+# isso a sério, vale configurar o Firebase, do jeito que o restante do código
+# já suporta).
+# ---------------------------------------------------------------------------
+GI_ALUNO_SESSION_TTL = 60 * 60 * 24 * 180  # 180 dias, igual ao professor
+UPLOADS_GI_DIR = ROOT / "uploads_gi"
+UPLOADS_GI_DIR.mkdir(exist_ok=True)
+app.mount("/uploads_gi", StaticFiles(directory=UPLOADS_GI_DIR), name="uploads_gi")
+
+
+def update_record(collection, record_id, patch):
+    """Atualiza (merge) um registro existente de uma coleção. Mesmo padrão
+    Firestore/JSON local das demais funções acima."""
+    db = get_firestore_db()
+    if db is not None:
+        ref = db.collection(collection).document(record_id)
+        if not ref.get().exists:
+            return None
+        ref.update(patch)
+        return {**ref.get().to_dict()}
+
+    path = ROOT / f"{collection}.json"
+    items = load_records(collection)
+    alvo = next((i for i in items if i.get("id") == record_id), None)
+    if not alvo:
+        return None
+    alvo.update(patch)
+    path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    return alvo
+
+
+def delete_record(collection, record_id):
+    db = get_firestore_db()
+    if db is not None:
+        db.collection(collection).document(record_id).delete()
+        return True
+    path = ROOT / f"{collection}.json"
+    items = load_records(collection)
+    novos = [i for i in items if i.get("id") != record_id]
+    if len(novos) == len(items):
+        return False
+    path.write_text(json.dumps(novos, ensure_ascii=False, indent=2), encoding="utf-8")
+    return True
+
+
+def make_gi_aluno_token(aluno_id):
+    expires = str(int(time.time()) + GI_ALUNO_SESSION_TTL)
+    payload = f"{aluno_id}.{expires}"
+    sig = hmac.new(_admin_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def verify_gi_aluno_token(token):
+    if not token or token.count(".") != 2:
+        return None
+    aluno_id, expires, sig = token.split(".")
+    payload = f"{aluno_id}.{expires}"
+    expected = hmac.new(_admin_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        if int(expires) <= time.time():
+            return None
+    except ValueError:
+        return None
+    return aluno_id
+
+
+def require_gi_aluno(gi_aluno_session: str | None = Cookie(default=None)):
+    aluno_id = verify_gi_aluno_token(gi_aluno_session)
+    if not aluno_id:
+        raise HTTPException(status_code=401, detail="Você precisa entrar na sua conta de aluno.")
+    return aluno_id
+
+
+def find_gi_aluno_by_email(email):
+    email = email.strip().lower()
+    for a in load_records("gi_alunos"):
+        if a.get("email", "").lower() == email:
+            return a
+    return None
+
+
+def find_gi_aluno_by_id(aluno_id):
+    for a in load_records("gi_alunos"):
+        if a.get("id") == aluno_id:
+            return a
+    return None
+
+
+def _set_gi_aluno_cookie(response, aluno_id):
+    response.set_cookie(
+        "gi_aluno_session",
+        make_gi_aluno_token(aluno_id),
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=GI_ALUNO_SESSION_TTL,
+    )
+
+
+class GiAlunoCadastroRequest(BaseModel):
+    nome: str
+    email: str
+    senha: str
+
+
+class GiAlunoLoginRequest(BaseModel):
+    email: str
+    senha: str
+
+
+@app.post("/api/gi/aluno/cadastro")
+def gi_aluno_cadastro(req: GiAlunoCadastroRequest):
+    nome = req.nome.strip()
+    email = req.email.strip().lower()
+    senha = req.senha
+    if len(nome) < 2:
+        return JSONResponse({"error": "Digite seu nome."}, status_code=400)
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return JSONResponse({"error": "Digite um e-mail válido."}, status_code=400)
+    if len(senha) < 6:
+        return JSONResponse({"error": "A senha precisa ter pelo menos 6 caracteres."}, status_code=400)
+    if find_gi_aluno_by_email(email):
+        return JSONResponse({"error": "Já existe uma conta com esse e-mail. Tente entrar em vez de cadastrar."}, status_code=409)
+
+    salt, digest = hash_senha(senha)
+    entry = save_record("gi_alunos", {
+        "nome": nome,
+        "email": email,
+        "senha_salt": salt,
+        "senha_hash": digest,
+    })
+    response = JSONResponse({"ok": True, "nome": nome, "email": email})
+    _set_gi_aluno_cookie(response, entry["id"])
+    return response
+
+
+@app.post("/api/gi/aluno/login")
+def gi_aluno_login(req: GiAlunoLoginRequest):
+    aluno = find_gi_aluno_by_email(req.email)
+    if not aluno or not verifica_senha(req.senha, aluno["senha_salt"], aluno["senha_hash"]):
+        return JSONResponse({"error": "E-mail ou senha incorretos."}, status_code=401)
+    response = JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno["email"]})
+    _set_gi_aluno_cookie(response, aluno["id"])
+    return response
+
+
+@app.post("/api/gi/aluno/logout")
+def gi_aluno_logout():
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("gi_aluno_session", secure=True, samesite="none")
+    return response
+
+
+@app.get("/api/gi/aluno/me")
+def gi_aluno_me(gi_aluno_session: str | None = Cookie(default=None)):
+    aluno_id = verify_gi_aluno_token(gi_aluno_session)
+    if not aluno_id:
+        return JSONResponse({"ok": False})
+    aluno = find_gi_aluno_by_id(aluno_id)
+    if not aluno:
+        return JSONResponse({"ok": False})
+    return JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno["email"]})
+
+
+def _modulo_publico(modulo, aulas_do_modulo):
+    return {
+        "id": modulo["id"],
+        "titulo": modulo["titulo"],
+        "ordem": modulo.get("ordem", 0),
+        "aulas": [_aula_publica(a) for a in aulas_do_modulo],
+    }
+
+
+def _aula_publica(aula):
+    return {
+        "id": aula["id"],
+        "numero": aula.get("numero", ""),
+        "tema": aula.get("tema", ""),
+        "apostila_url": aula.get("apostila_url") or None,
+        "arquivos": aula.get("arquivos", []),
+        "links": aula.get("links", []),
+    }
+
+
+@app.get("/api/gi/modulos")
+def gi_modulos_aluno(aluno_id: str = Depends(require_gi_aluno)):
+    """Lista pro aluno: só módulos ativos, só aulas publicadas, em ordem."""
+    modulos = sorted(
+        [m for m in load_records("gi_modulos") if m.get("ativo", True)],
+        key=lambda m: m.get("ordem", 0),
+    )
+    todas_aulas = load_records("gi_aulas")
+    out = []
+    for m in modulos:
+        aulas = sorted(
+            [a for a in todas_aulas if a.get("modulo_id") == m["id"] and a.get("publicada")],
+            key=lambda a: (a.get("numero") if isinstance(a.get("numero"), (int, float)) else 0),
+        )
+        out.append(_modulo_publico(m, aulas))
+    return JSONResponse(out)
+
+
+# --- Painel de admin (login único já existente, ADMIN_PASSWORD) ------------
+
+class GiModuloRequest(BaseModel):
+    titulo: str
+    ordem: int = 0
+    ativo: bool = True
+
+
+@app.get("/api/admin/gi/modulos")
+def gi_admin_listar_modulos(_: bool = Depends(require_admin)):
+    """Lista completa pro admin: módulos (ativos ou não) com TODAS as aulas
+    (publicadas ou não), já agrupadas."""
+    modulos = sorted(load_records("gi_modulos"), key=lambda m: m.get("ordem", 0))
+    todas_aulas = load_records("gi_aulas")
+    out = []
+    for m in modulos:
+        aulas = sorted(
+            [a for a in todas_aulas if a.get("modulo_id") == m["id"]],
+            key=lambda a: (a.get("numero") if isinstance(a.get("numero"), (int, float)) else 0),
+        )
+        out.append({**m, "aulas": aulas})
+    return JSONResponse(out)
+
+
+@app.post("/api/admin/gi/modulos")
+def gi_admin_criar_modulo(req: GiModuloRequest, _: bool = Depends(require_admin)):
+    titulo = req.titulo.strip()
+    if not titulo:
+        return JSONResponse({"error": "Dê um título ao módulo."}, status_code=400)
+    entry = save_record("gi_modulos", {"titulo": titulo, "ordem": req.ordem, "ativo": req.ativo})
+    return JSONResponse(entry)
+
+
+@app.put("/api/admin/gi/modulos/{modulo_id}")
+def gi_admin_editar_modulo(modulo_id: str, req: GiModuloRequest, _: bool = Depends(require_admin)):
+    titulo = req.titulo.strip()
+    if not titulo:
+        return JSONResponse({"error": "Dê um título ao módulo."}, status_code=400)
+    atualizado = update_record("gi_modulos", modulo_id, {"titulo": titulo, "ordem": req.ordem, "ativo": req.ativo})
+    if not atualizado:
+        return JSONResponse({"error": "Módulo não encontrado."}, status_code=404)
+    return JSONResponse(atualizado)
+
+
+@app.delete("/api/admin/gi/modulos/{modulo_id}")
+def gi_admin_excluir_modulo(modulo_id: str, _: bool = Depends(require_admin)):
+    # Exclui o módulo e todas as aulas dele junto, pra não deixar aula órfã.
+    for a in load_records("gi_aulas"):
+        if a.get("modulo_id") == modulo_id:
+            delete_record("gi_aulas", a["id"])
+    if not delete_record("gi_modulos", modulo_id):
+        return JSONResponse({"error": "Módulo não encontrado."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+class GiArquivo(BaseModel):
+    nome: str
+    url: str
+
+
+class GiLink(BaseModel):
+    titulo: str
+    url: str
+
+
+class GiAulaRequest(BaseModel):
+    modulo_id: str
+    numero: int = 0
+    tema: str
+    apostila_url: str | None = None
+    arquivos: list[GiArquivo] = []
+    links: list[GiLink] = []
+    publicada: bool = False
+
+
+@app.post("/api/admin/gi/aulas")
+def gi_admin_criar_aula(req: GiAulaRequest, _: bool = Depends(require_admin)):
+    tema = req.tema.strip()
+    if not tema:
+        return JSONResponse({"error": "Dê um tema à aula."}, status_code=400)
+    if not find_record("gi_modulos", req.modulo_id):
+        return JSONResponse({"error": "Módulo não encontrado."}, status_code=404)
+    entry = save_record("gi_aulas", {
+        "modulo_id": req.modulo_id,
+        "numero": req.numero,
+        "tema": tema,
+        "apostila_url": (req.apostila_url or "").strip() or None,
+        "arquivos": [a.model_dump() for a in req.arquivos],
+        "links": [l.model_dump() for l in req.links],
+        "publicada": req.publicada,
+    })
+    return JSONResponse(entry)
+
+
+@app.put("/api/admin/gi/aulas/{aula_id}")
+def gi_admin_editar_aula(aula_id: str, req: GiAulaRequest, _: bool = Depends(require_admin)):
+    tema = req.tema.strip()
+    if not tema:
+        return JSONResponse({"error": "Dê um tema à aula."}, status_code=400)
+    atualizado = update_record("gi_aulas", aula_id, {
+        "modulo_id": req.modulo_id,
+        "numero": req.numero,
+        "tema": tema,
+        "apostila_url": (req.apostila_url or "").strip() or None,
+        "arquivos": [a.model_dump() for a in req.arquivos],
+        "links": [l.model_dump() for l in req.links],
+        "publicada": req.publicada,
+    })
+    if not atualizado:
+        return JSONResponse({"error": "Aula não encontrada."}, status_code=404)
+    return JSONResponse(atualizado)
+
+
+@app.delete("/api/admin/gi/aulas/{aula_id}")
+def gi_admin_excluir_aula(aula_id: str, _: bool = Depends(require_admin)):
+    if not delete_record("gi_aulas", aula_id):
+        return JSONResponse({"error": "Aula não encontrada."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+def find_record(collection, record_id):
+    return next((i for i in load_records(collection) if i.get("id") == record_id), None)
+
+
+GI_UPLOAD_EXTENSOES = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
+GI_UPLOAD_MAX_BYTES = 25 * 1024 * 1024  # 25 MB por arquivo
+
+
+GI_CONTENT_TYPES = {
+    ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+}
+
+
+@app.post("/api/admin/gi/upload")
+async def gi_admin_upload(arquivo: UploadFile = File(...), _: bool = Depends(require_admin)):
+    ext = Path(arquivo.filename or "").suffix.lower()
+    if ext not in GI_UPLOAD_EXTENSOES:
+        return JSONResponse({"error": "Formato não aceito. Envie PDF, PNG, JPG, GIF ou WEBP."}, status_code=400)
+    conteudo = await arquivo.read()
+    if len(conteudo) > GI_UPLOAD_MAX_BYTES:
+        return JSONResponse({"error": "Arquivo maior que 25 MB."}, status_code=400)
+    nome_salvo = f"{uuid.uuid4().hex}{ext}"
+
+    # Firebase Storage se configurado (sobrevive a redeploys do Render),
+    # senão cai pro disco local (não sobrevive, mesma ressalva de sempre).
+    bucket = get_firebase_bucket()
+    if bucket is not None:
+        try:
+            blob = bucket.blob(f"gi_uploads/{nome_salvo}")
+            blob.upload_from_string(conteudo, content_type=GI_CONTENT_TYPES.get(ext, "application/octet-stream"))
+            blob.make_public()
+            return JSONResponse({"nome": arquivo.filename, "url": blob.public_url})
+        except Exception as e:
+            print("Falha ao subir pro Firebase Storage, usando disco local:", repr(e))
+
+    (UPLOADS_GI_DIR / nome_salvo).write_bytes(conteudo)
+    return JSONResponse({
+        "nome": arquivo.filename,
+        "url": f"/uploads_gi/{nome_salvo}",
+    })
+
+
+@app.get("/api/admin/gi/alunos")
+def gi_admin_listar_alunos(_: bool = Depends(require_admin)):
+    alunos = load_records("gi_alunos")
+    return JSONResponse([{"id": a["id"], "nome": a["nome"], "email": a["email"], "criadoEm": a.get("criadoEm")} for a in alunos])
+
+
+class GiResetarSenhaRequest(BaseModel):
+    nova_senha: str | None = None
+
+
+@app.post("/api/admin/gi/alunos/{aluno_id}/resetar-senha")
+def gi_admin_resetar_senha(aluno_id: str, req: GiResetarSenhaRequest, _: bool = Depends(require_admin)):
+    aluno = find_gi_aluno_by_id(aluno_id)
+    if not aluno:
+        return JSONResponse({"error": "Aluno não encontrado."}, status_code=404)
+    nova_senha = (req.nova_senha or "").strip()
+    gerada = False
+    if len(nova_senha) < 6:
+        # Admin não mandou uma senha válida: gera uma temporária pra repassar
+        # ao aluno (por fora, não tem e-mail configurado no servidor).
+        nova_senha = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        gerada = True
+    salt, digest = hash_senha(nova_senha)
+    update_record("gi_alunos", aluno_id, {"senha_salt": salt, "senha_hash": digest})
+    return JSONResponse({"ok": True, "nova_senha": nova_senha, "gerada": gerada})
+
+
+# ---------------------------------------------------------------------------
+# RPG histórico ("Jornada de Roma" e futuros cenários): o aluno joga no site
+# (estudativa.com.br/rpg/<cenario>), sem precisar de login — só um nome (e
+# opcionalmente e-mail, pra não duplicar no ranking, mesmo padrão do
+# js/ranking.js). O resultado final de cada jogada vira um registro aqui, pra
+# dar um ranking entre os alunos (mesmo padrão load_records/save_record das
+# outras coleções acima).
+# ---------------------------------------------------------------------------
+RPG_CENARIOS_VALIDOS = {"roma"}
+
+
+class RpgResultadoRequest(BaseModel):
+    cenario: str
+    nome: str
+    email: str | None = None
+    avatar: str | None = None
+    origem: str | None = None
+    final_id: str
+    final_titulo: str
+    score: int
+
+
+@app.post("/api/rpg/resultado")
+def rpg_salvar_resultado(req: RpgResultadoRequest):
+    cenario = req.cenario.strip().lower()
+    if cenario not in RPG_CENARIOS_VALIDOS:
+        return JSONResponse({"error": "Cenário inválido."}, status_code=400)
+    nome = req.nome.strip()[:60]
+    if not nome:
+        return JSONResponse({"error": "Informe um nome."}, status_code=400)
+    try:
+        score = max(0, min(1000, int(req.score)))
+    except (TypeError, ValueError):
+        score = 0
+    entry = save_record("rpg_resultados", {
+        "cenario": cenario,
+        "nome": nome,
+        "email": (req.email or "").strip().lower()[:120],
+        "avatar": (req.avatar or "")[:8],
+        "origem": (req.origem or "")[:40],
+        "final_id": req.final_id[:60],
+        "final_titulo": req.final_titulo.strip()[:140],
+        "score": score,
+    })
+    return JSONResponse({"ok": True, "resultado": entry})
+
+
+@app.get("/api/rpg/ranking/{cenario}")
+def rpg_ranking(cenario: str, limit: int = 10):
+    cenario = cenario.strip().lower()
+    if cenario not in RPG_CENARIOS_VALIDOS:
+        return JSONResponse({"error": "Cenário inválido."}, status_code=400)
+    items = [r for r in load_records("rpg_resultados") if r.get("cenario") == cenario]
+    # Mantém só a melhor jogada de cada aluno (por e-mail, se informado, senão
+    # pelo nome), pra não deixar o ranking lotado de tentativas repetidas.
+    melhores = {}
+    for r in items:
+        chave = r.get("email") or r.get("nome", "")
+        atual = melhores.get(chave)
+        if atual is None or r.get("score", 0) > atual.get("score", 0):
+            melhores[chave] = r
+    ranking_list = sorted(melhores.values(), key=lambda x: x.get("score", 0), reverse=True)
+    limit = max(1, min(100, limit))
+    return JSONResponse(ranking_list[:limit])
 
 
 # ---------------------------------------------------------------------------
