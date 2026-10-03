@@ -377,6 +377,98 @@ def admin_contribuicoes(_: bool = Depends(require_admin)):
     return JSONResponse(load_contribuicoes())
 
 
+def delete_record(collection, record_id):
+    """Remove um registro de uma 'coleção' pelo id (Firestore ou arquivo local).
+    Usado pra tirar uma contribuição da fila depois que o admin aprova ou
+    rejeita (não precisa checar dono, diferente do que o professor faz com os
+    próprios jogos salvos)."""
+    db = get_firestore_db()
+    if db is not None:
+        db.collection(collection).document(record_id).delete()
+        return True
+    path = ROOT / f"{collection}.json"
+    items = load_records(collection)
+    novos = [r for r in items if r.get("id") != record_id]
+    if len(novos) == len(items):
+        return False
+    path.write_text(json.dumps(novos, ensure_ascii=False, indent=2), encoding="utf-8")
+    return True
+
+
+def save_questions_data():
+    """Persiste o DATA (acervo oficial de questões) de volta no questions.json,
+    no mesmo formato compacto do arquivo original."""
+    (ROOT / "questions.json").write_text(
+        json.dumps(DATA, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def aprovar_contribuicao(contrib_id):
+    """Pega uma contribuição pendente e insere as perguntas dela no acervo
+    oficial (DATA/questions.json): numa aba já existente com a mesma
+    disciplina+tema, se houver, ou numa aba nova. Retorna o nome da aba onde
+    entrou, ou None se a contribuição não existir."""
+    contrib = next((c for c in load_contribuicoes() if c.get("id") == contrib_id), None)
+    if not contrib:
+        return None
+
+    disciplina = contrib.get("disciplina", "")
+    tema = contrib.get("tema", "")
+    perguntas = contrib.get("perguntas", [])
+
+    topic = next(
+        (
+            t for t in DATA["topics"]
+            if t.get("disciplina", "").lower() == disciplina.lower()
+            and t.get("name", "").strip().lower() == tema.strip().lower()
+        ),
+        None,
+    )
+    if topic is None:
+        topic = {
+            "id": f"contrib-{uuid.uuid4().hex[:8]}",
+            "disciplina": disciplina,
+            "name": tema,
+            "category": None,
+            "grade": None,
+            "question_count": 0,
+            "questions": [],
+        }
+        DATA["topics"].append(topic)
+
+    for p in perguntas:
+        topic["questions"].append({
+            "number": len(topic["questions"]) + 1,
+            "question": p["question"],
+            "options": p["options"],
+            "correct_answer": p["correct_answer"],
+            "source_file": "contribuicao_professor",
+            "source": f"Enviada por {contrib.get('professor') or 'um professor'} via painel ({contrib.get('criadoEm', '')})",
+            "id": uuid.uuid4().hex[:8],
+        })
+    topic["question_count"] = len(topic["questions"])
+
+    save_questions_data()
+    delete_record("contribuicoes_pendentes", contrib_id)
+    return topic["name"]
+
+
+@app.post("/api/admin/contribuicoes/{contrib_id}/aprovar")
+def admin_aprovar_contribuicao(contrib_id: str, _: bool = Depends(require_admin)):
+    topic_name = aprovar_contribuicao(contrib_id)
+    if topic_name is None:
+        return JSONResponse({"error": "Contribuição não encontrada (já pode ter sido revisada)."}, status_code=404)
+    return JSONResponse({"ok": True, "topic": topic_name})
+
+
+@app.post("/api/admin/contribuicoes/{contrib_id}/rejeitar")
+def admin_rejeitar_contribuicao(contrib_id: str, _: bool = Depends(require_admin)):
+    ok = delete_record("contribuicoes_pendentes", contrib_id)
+    if not ok:
+        return JSONResponse({"error": "Contribuição não encontrada (já pode ter sido revisada)."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/qr")
 def qr(request: Request, room: str):
     host = request.headers.get("host", "localhost:3000")
