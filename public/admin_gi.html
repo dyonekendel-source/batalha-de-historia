@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel GI Informática — Estudativa</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  #loginBox{max-width:420px;margin:90px auto;padding:36px}
+  #loginBox input{margin-bottom:14px}
+  #loginError{color:var(--danger);margin-bottom:10px;min-height:18px}
+  .topbar-admin{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+  .modulo-card{border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin-bottom:16px;background:rgba(7,16,28,.48)}
+  .modulo-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .modulo-head h3{margin:0}
+  .modulo-head .tag.off{color:var(--muted);border-color:var(--muted)}
+  .aula-item{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:10px;background:rgba(0,0,0,.18)}
+  .aula-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .aula-head b{font-size:15px}
+  .tag{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;margin-left:6px;color:var(--muted)}
+  .tag.pub{color:#4ade80;border-color:#4ade80}
+  .tag.hid{color:#ff7a7f;border-color:#ff7a7f}
+  .mini{font-size:12px;color:var(--muted)}
+  .file-row{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:4px}
+  .file-row a{color:var(--accent)}
+  .btn.small{padding:6px 12px;font-size:12px}
+  form.inline{border:1px dashed var(--line);border-radius:12px;padding:14px;margin-top:10px}
+  form.inline label{font-size:12px;color:var(--muted);display:block;margin-top:8px}
+  form.inline input, form.inline textarea{width:100%;margin-top:3px}
+  .aluno-row{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:10px 0;flex-wrap:wrap;gap:8px}
+</style>
+</head>
+<body>
+<main class="app">
+
+  <section id="loginBox" class="card hidden">
+    <span class="eyebrow">Área restrita</span>
+    <h1 style="margin:6px 0 20px;font-size:26px">Painel GI Informática</h1>
+    <p id="loginError"></p>
+    <label for="pw">Senha de admin</label>
+    <input id="pw" type="password" placeholder="Sua senha de admin" autocomplete="current-password">
+    <button class="btn primary wide" onclick="login()">Entrar</button>
+    <p class="mini" style="margin-top:14px">Mesma senha de admin do painel do Batalha de Estudo.</p>
+  </section>
+
+  <section id="dash" class="hidden">
+    <header class="topbar-admin">
+      <div>
+        <span class="eyebrow">GI Informática</span>
+        <h1 style="margin:6px 0 0;font-size:30px">Módulos e aulas</h1>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn secondary" onclick="selectView('alunos')">👥 Alunos cadastrados</button>
+        <button class="btn secondary" onclick="logout()">Sair</button>
+      </div>
+    </header>
+
+    <div id="viewModulos">
+      <button class="btn primary" onclick="toggleNovoModulo()">+ Novo módulo</button>
+      <form class="inline hidden" id="formNovoModulo">
+        <label>Título do módulo</label>
+        <input id="novoModuloTitulo" placeholder="Ex: Módulo 1 — Introdução ao Hardware">
+        <label>Ordem (menor número aparece primeiro)</label>
+        <input id="novoModuloOrdem" type="number" value="0">
+        <button class="btn primary small" style="margin-top:10px" onclick="criarModulo(event)">Criar módulo</button>
+      </form>
+
+      <div id="modulosList" style="margin-top:20px"></div>
+    </div>
+
+    <div id="viewAlunos" class="hidden">
+      <button class="btn secondary" onclick="selectView('modulos')">← Voltar pros módulos</button>
+      <h2 style="margin-top:16px">Alunos cadastrados</h2>
+      <div id="alunosList" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let cache = {modulos: [], alunos: []};
+
+function esc(s){ const d=document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+function showLogin(){ $('loginBox').classList.remove('hidden'); $('dash').classList.add('hidden'); }
+function showDash(){ $('loginBox').classList.add('hidden'); $('dash').classList.remove('hidden'); loadModulos(); }
+
+async function checkLogin(){
+  try{
+    const r = await fetch('/api/admin/check');
+    const data = await r.json();
+    data.ok ? showDash() : showLogin();
+  }catch(e){ showLogin(); }
+}
+
+async function login(){
+  const pw = $('pw').value;
+  $('loginError').textContent = '';
+  try{
+    const r = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password: pw}),
+    });
+    const data = await r.json();
+    if (r.ok && data.ok) { $('pw').value = ''; showDash(); }
+    else { $('loginError').textContent = data.error || 'Senha incorreta.'; }
+  }catch(e){ $('loginError').textContent = 'Erro ao conectar com o servidor.'; }
+}
+$('pw') && $('pw').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+async function logout(){
+  await fetch('/api/admin/logout', {method: 'POST'});
+  showLogin();
+}
+
+function selectView(v){
+  $('viewModulos').classList.toggle('hidden', v !== 'modulos');
+  $('viewAlunos').classList.toggle('hidden', v !== 'alunos');
+  if (v === 'alunos') loadAlunos();
+}
+
+function toggleNovoModulo(){ $('formNovoModulo').classList.toggle('hidden'); }
+
+async function loadModulos(){
+  const r = await fetch('/api/admin/gi/modulos');
+  cache.modulos = r.ok ? await r.json() : [];
+  renderModulos();
+}
+
+async function criarModulo(ev){
+  ev.preventDefault();
+  const titulo = $('novoModuloTitulo').value.trim();
+  const ordem = parseInt($('novoModuloOrdem').value || '0', 10);
+  if (!titulo) return alert('Dê um título ao módulo.');
+  const r = await fetch('/api/admin/gi/modulos', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({titulo, ordem, ativo: true}),
+  });
+  const data = await r.json();
+  if (!r.ok) return alert(data.error || 'Erro ao criar módulo.');
+  $('novoModuloTitulo').value = ''; $('formNovoModulo').classList.add('hidden');
+  await loadModulos();
+}
+
+async function excluirModulo(id){
+  if (!confirm('Excluir este módulo e TODAS as aulas dele? Não pode ser desfeito.')) return;
+  await fetch(`/api/admin/gi/modulos/${id}`, {method:'DELETE'});
+  await loadModulos();
+}
+
+async function alternarModuloAtivo(mod){
+  await fetch(`/api/admin/gi/modulos/${mod.id}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({titulo: mod.titulo, ordem: mod.ordem, ativo: !mod.ativo}),
+  });
+  await loadModulos();
+}
+
+function renderModulos(){
+  const el = $('modulosList');
+  if (!cache.modulos.length){ el.innerHTML = '<p class="muted">Nenhum módulo criado ainda.</p>'; return; }
+  el.innerHTML = cache.modulos.map(m => `
+    <div class="modulo-card">
+      <div class="modulo-head">
+        <h3>${esc(m.titulo)} ${m.ativo ? '' : '<span class="tag off">oculto</span>'}</h3>
+        <div style="display:flex;gap:6px">
+          <button class="btn secondary small" onclick="alternarModuloAtivo(${JSON.stringify(m).replace(/"/g,'&quot;')})">${m.ativo ? 'Ocultar módulo' : 'Mostrar módulo'}</button>
+          <button class="btn secondary small" onclick="excluirModulo('${m.id}')">Excluir</button>
+        </div>
+      </div>
+      <div class="aulasWrap" id="aulas-${m.id}">
+        ${(m.aulas||[]).map(a => renderAula(a)).join('') || '<p class="mini">Nenhuma aula ainda.</p>'}
+      </div>
+      <button class="btn primary small" style="margin-top:12px" onclick="toggleNovaAula('${m.id}')">+ Nova aula</button>
+      <form class="inline hidden" id="formAula-${m.id}">
+        <label>Número da aula</label>
+        <input id="aulaNumero-${m.id}" type="number" value="1">
+        <label>Tema</label>
+        <input id="aulaTema-${m.id}" placeholder="Ex: Montagem de computadores">
+        <label>Link da apostila (cole o link do Google Drive, Dropbox etc. já compartilhado para "qualquer pessoa com o link")</label>
+        <input id="aulaApostilaUrl-${m.id}" placeholder="https://...">
+        <label style="margin-top:14px">Links extras (vídeo, PDF, imagem, o que for — quantos quiser)</label>
+        <div id="aulaLinksList-${m.id}"></div>
+        <button type="button" class="btn secondary small" style="margin-top:6px" onclick="addLinkRow('${m.id}')">+ Adicionar link</button>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px">
+          <input type="checkbox" id="aulaPublicada-${m.id}" style="width:auto;margin:0"> Já liberar essa aula para os alunos
+        </label>
+        <button class="btn primary small" style="margin-top:10px" onclick="criarAula(event,'${m.id}')">Salvar aula</button>
+      </form>
+    </div>
+  `).join('');
+}
+
+function addLinkRow(modId, titulo, url){
+  const wrap = document.createElement('div');
+  wrap.className = 'link-row';
+  wrap.style.cssText = 'display:flex;gap:6px;margin-top:6px';
+  wrap.innerHTML = `
+    <input placeholder="Título (ex: Vídeo da aula)" class="linkTitulo" value="${titulo ? esc(titulo) : ''}" style="flex:1">
+    <input placeholder="https://..." class="linkUrl" value="${url ? esc(url) : ''}" style="flex:2">
+    <button type="button" class="btn secondary small" onclick="this.parentElement.remove()">✕</button>
+  `;
+  $(`aulaLinksList-${modId}`).appendChild(wrap);
+}
+
+function renderAula(a){
+  const arquivos = (a.arquivos||[]).map(f => `<div class="file-row">📎 <a href="${esc(f.url)}" target="_blank">${esc(f.nome)}</a></div>`).join('');
+  const links = (a.links||[]).map(l => `<div class="file-row">🔗 <a href="${esc(l.url)}" target="_blank">${esc(l.titulo)}</a></div>`).join('');
+  return `
+    <div class="aula-item">
+      <div class="aula-head">
+        <b>Aula ${esc(a.numero)} — ${esc(a.tema)}</b>
+        <span class="tag ${a.publicada ? 'pub':'hid'}">${a.publicada ? 'liberada' : 'oculta'}</span>
+      </div>
+      ${a.apostila_url ? `<div class="file-row">📘 <a href="${esc(a.apostila_url)}" target="_blank">Apostila (link)</a></div>` : ''}
+      ${arquivos}
+      ${links}
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn secondary small" onclick="alternarAulaPublicada(${JSON.stringify(a).replace(/"/g,'&quot;')})">${a.publicada ? 'Ocultar aula' : 'Liberar aula'}</button>
+        <button class="btn secondary small" onclick="excluirAula('${a.id}')">Excluir aula</button>
+      </div>
+    </div>
+  `;
+}
+
+function toggleNovaAula(modId){ $(`formAula-${modId}`).classList.toggle('hidden'); }
+
+function coletarLinks(modId){
+  return Array.from($(`aulaLinksList-${modId}`).querySelectorAll('.link-row')).map(row => ({
+    titulo: row.querySelector('.linkTitulo').value.trim(),
+    url: row.querySelector('.linkUrl').value.trim(),
+  })).filter(l => l.titulo && l.url);
+}
+
+async function criarAula(ev, modId){
+  ev.preventDefault();
+  const numero = parseInt($(`aulaNumero-${modId}`).value || '0', 10);
+  const tema = $(`aulaTema-${modId}`).value.trim();
+  const apostila_url = $(`aulaApostilaUrl-${modId}`).value.trim();
+  const publicada = $(`aulaPublicada-${modId}`).checked;
+  if (!tema) return alert('Dê um tema à aula.');
+
+  const links = coletarLinks(modId);
+
+  const r = await fetch('/api/admin/gi/aulas', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({modulo_id: modId, numero, tema, apostila_url, arquivos: [], links, publicada}),
+  });
+  const data = await r.json();
+  if (!r.ok) return alert(data.error || 'Erro ao criar aula.');
+  $(`formAula-${modId}`).classList.add('hidden');
+  await loadModulos();
+}
+
+async function alternarAulaPublicada(a){
+  await fetch(`/api/admin/gi/aulas/${a.id}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      modulo_id: a.modulo_id, numero: a.numero, tema: a.tema,
+      apostila_url: a.apostila_url, arquivos: a.arquivos||[], links: a.links||[],
+      publicada: !a.publicada,
+    }),
+  });
+  await loadModulos();
+}
+
+async function excluirAula(id){
+  if (!confirm('Excluir esta aula?')) return;
+  await fetch(`/api/admin/gi/aulas/${id}`, {method:'DELETE'});
+  await loadModulos();
+}
+
+async function loadAlunos(){
+  const r = await fetch('/api/admin/gi/alunos');
+  cache.alunos = r.ok ? await r.json() : [];
+  renderAlunos();
+}
+
+function renderAlunos(){
+  const el = $('alunosList');
+  if (!cache.alunos.length){ el.innerHTML = '<p class="muted">Nenhum aluno cadastrado ainda.</p>'; return; }
+  el.innerHTML = cache.alunos.map(a => `
+    <div class="aluno-row">
+      <div><b>${esc(a.nome)}</b><br><span class="mini">${esc(a.email)} · desde ${esc((a.criadoEm||'').slice(0,10))}</span></div>
+      <button class="btn secondary small" onclick="resetarSenha('${a.id}','${esc(a.nome)}')">Resetar senha</button>
+    </div>
+  `).join('');
+}
+
+async function resetarSenha(id, nome){
+  if (!confirm(`Gerar uma nova senha temporária para ${nome}?`)) return;
+  const r = await fetch(`/api/admin/gi/alunos/${id}/resetar-senha`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}),
+  });
+  const data = await r.json();
+  if (!r.ok) return alert(data.error || 'Erro ao resetar senha.');
+  prompt(`Nova senha temporária de ${nome} (repasse para ele por fora, ex: WhatsApp). Peça para ele trocar depois de entrar:`, data.nova_senha);
+}
+
+checkLogin();
+</script>
+</body>
+</html>
