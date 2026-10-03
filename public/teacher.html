@@ -29,6 +29,7 @@
 
 <section id="setup" class="card setup-card">
   <div class="section-title"><div><span class="eyebrow">NOVA PARTIDA</span><h2>Escolha o tema</h2></div><span id="questionsPill" class="pill">10 questões</span></div>
+  <div id="loginHint" class="student-msg" style="margin-bottom:18px">💡 Tem uma conta de professor? Fazendo login (canto superior direito) você pode <b>salvar as perguntas que criar</b> e reabrir o mesmo jogo depois, sem digitar tudo de novo.</div>
   <div class="rules" style="margin:0 0 24px">
     <button type="button" id="tabBank" class="btn primary" style="flex:1">📚 Usar banco pronto</button>
     <button type="button" id="tabCustom" class="btn secondary" style="flex:1">✍️ Criar minhas perguntas</button>
@@ -72,7 +73,8 @@
     <input id="customProfessor" placeholder="Seu nome">
     <label>Quantidade de perguntas</label>
     <input id="customQtd" type="number" min="1" max="50" value="10" style="max-width:140px">
-    <p class="muted">Crie quantas perguntas quiser (mínimo 1), cada uma com 4 alternativas. Marque qual é a correta. Elas já valem pra essa partida e também ficam guardadas numa fila de revisão pra, depois, entrarem (ou não) no acervo oficial do site.</p>
+    <p class="muted">Crie quantas perguntas quiser (mínimo 1), cada uma com 4 alternativas. Marque qual é a correta. Elas já valem pra essa partida.</p>
+    <p class="student-msg" style="background:rgba(255,200,0,.08);border:1px solid rgba(255,200,0,.3);border-radius:10px;padding:10px 14px">⚠️ <b>Toda pergunta criada aqui entra numa fila de revisão</b> e pode, depois, ser aprovada pelo administrador do site e passar a fazer parte do banco oficial de questões — vista por todos os alunos. Não envie nada que não deva ser público.</p>
     <div id="customQuestions"></div>
     <label id="saveGameWrap" class="hidden" style="display:flex;align-items:center;gap:10px;margin-top:14px">
       <input type="checkbox" id="saveGameCheck" style="width:auto">
@@ -103,6 +105,7 @@ function renderProfessorBox(){
   }
   $('saveGameWrap').classList.toggle('hidden',!professor);
   $('saveGameHint').classList.toggle('hidden',!!professor);
+  $('loginHint').classList.toggle('hidden',!!professor);
   if(!professor) $('saveGameCheck').checked=false;
 }
 

@@ -170,7 +170,11 @@ function renderTab(){
         <ol style="padding-left:20px;color:var(--muted);margin-top:10px">
           ${item.perguntas.map(p => `<li style="margin-bottom:8px"><b style="color:var(--text)">${esc(p.question)}</b><br>${p.options.map(o => o === p.correct_answer ? `✅ ${esc(o)}` : `— ${esc(o)}`).join('<br>')}</li>`).join('')}
         </ol>
-        <button class="btn secondary" style="margin-top:8px" onclick='copiar(${JSON.stringify(JSON.stringify(item))})'>📋 Copiar como JSON</button>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn primary" onclick="aprovarContribuicao('${esc(item.id)}')">✅ Aprovar e incluir no banco oficial</button>
+          <button class="btn secondary" onclick="rejeitarContribuicao('${esc(item.id)}')">🗑 Rejeitar</button>
+          <button class="btn secondary" onclick='copiar(${JSON.stringify(JSON.stringify(item))})'>📋 Copiar como JSON</button>
+        </div>
       </div>
     `).join('');
   }
@@ -178,6 +182,27 @@ function renderTab(){
 
 function copiar(json){
   navigator.clipboard.writeText(json).then(()=>alert('Copiado!'));
+}
+
+async function aprovarContribuicao(id){
+  if(!confirm('Aprovar essas perguntas? Elas vão entrar direto no banco oficial do jogo (numa aba já existente com a mesma disciplina/tema, ou numa aba nova).')) return;
+  try{
+    const r = await fetch(`/api/admin/contribuicoes/${encodeURIComponent(id)}/aprovar`, {method:'POST'});
+    const data = await r.json();
+    if(!r.ok){ alert(data.error || 'Não foi possível aprovar.'); return; }
+    alert(`Incluído no banco oficial, na aba "${data.topic}".`);
+    await loadAll();
+  }catch(e){ alert('Erro ao conectar com o servidor.'); }
+}
+
+async function rejeitarContribuicao(id){
+  if(!confirm('Rejeitar e descartar essas perguntas? Isso não pode ser desfeito.')) return;
+  try{
+    const r = await fetch(`/api/admin/contribuicoes/${encodeURIComponent(id)}/rejeitar`, {method:'POST'});
+    const data = await r.json();
+    if(!r.ok){ alert(data.error || 'Não foi possível rejeitar.'); return; }
+    await loadAll();
+  }catch(e){ alert('Erro ao conectar com o servidor.'); }
 }
 
 checkLogin();
