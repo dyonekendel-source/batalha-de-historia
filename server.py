@@ -83,8 +83,10 @@ DISCIPLINAS = [
 app = FastAPI(title="Batalha de Estudo")
 
 # CORS: além do próprio jogo, este servidor também atende o endpoint /api/tutor
-# (chamado pelo site principal, estudativa.com.br, que é hospedado à parte no
-# Netlify). Sem isso o navegador bloqueia a chamada por ser de outra origem.
+# e as contas de professor (/api/professor/*), chamados pelo site principal
+# (estudativa.com.br, hospedado à parte). allow_credentials=True é necessário
+# pra o cookie de sessão do professor funcionar quando o login é feito pela
+# página /professor do site, e não direto no painel do jogo.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -92,7 +94,8 @@ app.add_middleware(
         "https://estudativa.com.br",
         "http://localhost:8899",  # conveniência para testes locais
     ],
-    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -563,7 +566,11 @@ def _set_professor_cookie(response, professor_id):
         make_professor_token(professor_id),
         httponly=True,
         secure=True,
-        samesite="lax",
+        # "none" (não "lax"): o login pode acontecer tanto direto no painel do
+        # jogo quanto na página /professor do site (outro domínio), e nesse
+        # segundo caso o cookie só é enviado nas chamadas seguintes se for
+        # SameSite=None (exige Secure=True, que já está acima).
+        samesite="none",
         max_age=PROFESSOR_SESSION_TTL,
     )
 
@@ -607,7 +614,7 @@ def professor_login(req: ProfessorLoginRequest):
 @app.post("/api/professor/logout")
 def professor_logout():
     response = JSONResponse({"ok": True})
-    response.delete_cookie("professor_session")
+    response.delete_cookie("professor_session", secure=True, samesite="none")
     return response
 
 
