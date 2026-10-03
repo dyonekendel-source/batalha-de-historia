@@ -117,6 +117,34 @@ async function checkProfessorSession(){
   }catch(e){ professor=null; }
   renderProfessorBox();
   if(professor && !$('savedPanel').classList.contains('hidden')) loadSavedGames();
+  await tryAutoPlayFromQuery();
+}
+
+// Quando a pessoa clica em "Jogar agora" na página /professor do site
+// (estudativa.com.br/professor), ela chega aqui como
+// teacher.html?jogo=<id> — isso abre a sala direto com aquelas perguntas
+// salvas, sem precisar digitar nada de novo.
+let pendingAutoPlay=null;
+async function tryAutoPlayFromQuery(){
+  const jogoId=new URLSearchParams(location.search).get('jogo');
+  if(!jogoId)return;
+  if(!professor){
+    setConnectionStatus('Entre na sua conta de professor (canto superior direito) pra abrir esse jogo salvo.',true);
+    return;
+  }
+  try{
+    const r=await fetch('/api/professor/jogos');
+    if(!r.ok)throw new Error('jogos');
+    const jogos=await r.json();
+    const jogo=jogos.find(j=>j.id===jogoId);
+    if(!jogo){ setConnectionStatus('Esse jogo salvo não foi encontrado (pode ter sido excluído).',true); return; }
+    pendingAutoPlay=jogo;
+    if(wsReady) createRoomFromSaved(pendingAutoPlay);
+  }catch(e){ setConnectionStatus('Não foi possível carregar o jogo salvo.',true); }
+}
+function createRoomFromSaved(jogo){
+  pendingAutoPlay=null;
+  sendAction('create_custom',{disciplina:jogo.disciplina,tema:jogo.tema,professor:professor.nome,perguntas:jogo.perguntas});
 }
 
 function openAuthModal(){
@@ -237,6 +265,7 @@ function connect(){
     $('create').disabled=!topicsLoaded;
     $('create').textContent=topicsLoaded?'Criar sala':'Aguardando temas…';
     setConnectionStatus('Servidor conectado.');
+    if(pendingAutoPlay) createRoomFromSaved(pendingAutoPlay);
   };
   ws.onerror=()=>{
     wsReady=false;
