@@ -158,6 +158,23 @@ async function alternarModuloAtivo(mod){
   await loadModulos();
 }
 
+async function editarModulo(mod){
+  const novoTitulo = prompt('Título do módulo:', mod.titulo);
+  if (novoTitulo === null) return; // cancelou
+  const titulo = novoTitulo.trim();
+  if (!titulo) return alert('Dê um título ao módulo.');
+  const novaOrdemStr = prompt('Ordem (menor número aparece primeiro):', mod.ordem ?? 0);
+  if (novaOrdemStr === null) return;
+  const ordem = parseInt(novaOrdemStr || '0', 10);
+  const r = await fetch(`/api/admin/gi/modulos/${mod.id}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({titulo, ordem, ativo: mod.ativo}),
+  });
+  const data = await r.json();
+  if (!r.ok) return alert(data.error || 'Erro ao editar módulo.');
+  await loadModulos();
+}
+
 function renderModulos(){
   const el = $('modulosList');
   if (!cache.modulos.length){ el.innerHTML = '<p class="muted">Nenhum módulo criado ainda.</p>'; return; }
@@ -166,12 +183,13 @@ function renderModulos(){
       <div class="modulo-head">
         <h3>${esc(m.titulo)} ${m.ativo ? '' : '<span class="tag off">oculto</span>'}</h3>
         <div style="display:flex;gap:6px">
+          <button class="btn secondary small" onclick="editarModulo(${JSON.stringify(m).replace(/"/g,'&quot;')})">Editar</button>
           <button class="btn secondary small" onclick="alternarModuloAtivo(${JSON.stringify(m).replace(/"/g,'&quot;')})">${m.ativo ? 'Ocultar módulo' : 'Mostrar módulo'}</button>
           <button class="btn secondary small" onclick="excluirModulo('${m.id}')">Excluir</button>
         </div>
       </div>
       <div class="aulasWrap" id="aulas-${m.id}">
-        ${(m.aulas||[]).map(a => renderAula(a)).join('') || '<p class="mini">Nenhuma aula ainda.</p>'}
+        ${(m.aulas||[]).map(a => renderAula(a, m.id)).join('') || '<p class="mini">Nenhuma aula ainda.</p>'}
       </div>
       <button class="btn primary small" style="margin-top:12px" onclick="toggleNovaAula('${m.id}')">+ Nova aula</button>
       <form class="inline hidden" id="formAula-${m.id}">
@@ -205,7 +223,7 @@ function addLinkRow(modId, titulo, url){
   $(`aulaLinksList-${modId}`).appendChild(wrap);
 }
 
-function renderAula(a){
+function renderAula(a, modId){
   const arquivos = (a.arquivos||[]).map(f => `<div class="file-row">📎 <a href="${esc(f.url)}" target="_blank">${esc(f.nome)}</a></div>`).join('');
   const links = (a.links||[]).map(l => `<div class="file-row">🔗 <a href="${esc(l.url)}" target="_blank">${esc(l.titulo)}</a></div>`).join('');
   return `
@@ -218,6 +236,7 @@ function renderAula(a){
       ${arquivos}
       ${links}
       <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn secondary small" onclick="editarAula('${modId}', ${JSON.stringify(a).replace(/"/g,'&quot;')})">Editar</button>
         <button class="btn secondary small" onclick="alternarAulaPublicada(${JSON.stringify(a).replace(/"/g,'&quot;')})">${a.publicada ? 'Ocultar aula' : 'Liberar aula'}</button>
         <button class="btn secondary small" onclick="excluirAula('${a.id}')">Excluir aula</button>
       </div>
@@ -225,7 +244,34 @@ function renderAula(a){
   `;
 }
 
-function toggleNovaAula(modId){ $(`formAula-${modId}`).classList.toggle('hidden'); }
+// Guarda, por módulo, o id da aula sendo editada no formulário (null = criando nova).
+const editandoAula = {};
+
+function toggleNovaAula(modId){
+  editandoAula[modId] = null;
+  limparFormAula(modId);
+  $(`formAula-${modId}`).classList.remove('hidden');
+}
+
+function limparFormAula(modId){
+  $(`aulaNumero-${modId}`).value = '1';
+  $(`aulaTema-${modId}`).value = '';
+  $(`aulaApostilaUrl-${modId}`).value = '';
+  $(`aulaLinksList-${modId}`).innerHTML = '';
+  $(`aulaPublicada-${modId}`).checked = false;
+}
+
+function editarAula(modId, a){
+  editandoAula[modId] = a.id;
+  $(`aulaNumero-${modId}`).value = a.numero ?? 1;
+  $(`aulaTema-${modId}`).value = a.tema || '';
+  $(`aulaApostilaUrl-${modId}`).value = a.apostila_url || '';
+  $(`aulaLinksList-${modId}`).innerHTML = '';
+  (a.links||[]).forEach(l => addLinkRow(modId, l.titulo, l.url));
+  $(`aulaPublicada-${modId}`).checked = !!a.publicada;
+  $(`formAula-${modId}`).classList.remove('hidden');
+  $(`formAula-${modId}`).scrollIntoView({behavior:'smooth', block:'center'});
+}
 
 function coletarLinks(modId){
   return Array.from($(`aulaLinksList-${modId}`).querySelectorAll('.link-row')).map(row => ({
@@ -243,13 +289,15 @@ async function criarAula(ev, modId){
   if (!tema) return alert('Dê um tema à aula.');
 
   const links = coletarLinks(modId);
+  const aulaId = editandoAula[modId];
+  const body = JSON.stringify({modulo_id: modId, numero, tema, apostila_url, arquivos: [], links, publicada});
 
-  const r = await fetch('/api/admin/gi/aulas', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({modulo_id: modId, numero, tema, apostila_url, arquivos: [], links, publicada}),
-  });
+  const r = aulaId
+    ? await fetch(`/api/admin/gi/aulas/${aulaId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body })
+    : await fetch('/api/admin/gi/aulas', { method: 'POST', headers: {'Content-Type':'application/json'}, body });
   const data = await r.json();
-  if (!r.ok) return alert(data.error || 'Erro ao criar aula.');
+  if (!r.ok) return alert(data.error || (aulaId ? 'Erro ao salvar edição da aula.' : 'Erro ao criar aula.'));
+  editandoAula[modId] = null;
   $(`formAula-${modId}`).classList.add('hidden');
   await loadModulos();
 }
