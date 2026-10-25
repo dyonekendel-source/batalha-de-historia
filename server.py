@@ -100,7 +100,7 @@ def get_firebase_bucket():
 # a taxonomia consistente entre o quiz do site e as perguntas criadas aqui.
 DISCIPLINAS = [
     "historia", "portugues", "matematica", "geografia", "ciencias",
-    "quimica", "fisica", "biologia", "filosofia", "sociologia", "outros",
+    "quimica", "fisica", "biologia", "filosofia", "sociologia", "artes", "outros",
 ]
 
 app = FastAPI(title="Batalha de Estudo")
@@ -1779,8 +1779,9 @@ _EXEMPLO_FICHA_HISTORIA = {
 
 MAPA_SYSTEM_PROMPT = (
     "Você cria fichas de mapa mental para a Estudativa, uma plataforma de estudos "
-    "para o Ensino Fundamental brasileiro (1º ao 9º ano), seguindo rigorosamente a "
-    "BNCC. Responda SEMPRE em JSON puro, com exatamente este formato:\n"
+    "brasileira que atende do 1º ano do Ensino Fundamental ao Ensino Médio, seguindo "
+    "rigorosamente a BNCC (e, no Ensino Médio, o nível de aprofundamento esperado "
+    "para cada componente). Responda SEMPRE em JSON puro, com exatamente este formato:\n"
     '{"titulo": "...", "ramos": [{"titulo": "...", "itens": ["...", "..."]}]}\n\n'
     "Regras obrigatórias:\n"
     "- Entre 4 e 6 ramos (nunca menos nem mais).\n"
@@ -1869,9 +1870,10 @@ async def gerar_mapa_com_ia(disciplina, ano, tema, descritores=None):
     key = get_groq_key()
     if not key:
         raise RuntimeError("groq_sem_chave")
+    nivel = "do Ensino Médio" if ano.strip().lower() == "ensino médio" else "do Ensino Fundamental"
     user_msg = (
         f'Crie a ficha de mapa mental sobre o tema "{tema}", para a disciplina '
-        f"{disciplina}, no {ano} do Ensino Fundamental brasileiro, seguindo "
+        f"{disciplina}, no {ano} {nivel} brasileiro, seguindo "
         "rigorosamente o formato, o tamanho e a BNCC."
     )
     if descritores:
