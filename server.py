@@ -1873,7 +1873,7 @@ async def gerar_mapa_com_ia(disciplina, ano, tema):
                     {"role": "user", "content": user_msg},
                 ],
                 "temperature": 0.4,
-                "max_tokens": 900,
+                "max_tokens": 1800,
                 "response_format": {"type": "json_object"},
             },
         )
