@@ -1716,6 +1716,299 @@ async def tutor(req: TutorRequest):
         )
 
 
+# ---------------------------------------------------------------------------
+# Mapas mentais: cada mapa é uma "ficha" ({"titulo", "ramos":[{"titulo",
+# "itens":[...]}]}) desenhada sempre no mesmo layout fixo pelo frontend (não é
+# imagem gerada por IA) — isso evita seta solta, balão fora do lugar ou texto
+# errado. A IA (mesma Groq usada pelo /api/tutor) só preenche essa ficha;
+# quem desenha é o navegador. Módulo isolado: nada dos quizzes, Jornada,
+# salas ou tutor foi alterado para isso.
+# ---------------------------------------------------------------------------
+_EXEMPLO_FICHA_GEOGRAFIA = {
+    "titulo": "Orientação e Localização no Espaço",
+    "ramos": [
+        {"titulo": "Orientar-se", "itens": [
+            "Orientação: saber a direção a seguir",
+            "Localização: saber onde um lugar está",
+            "Pontos de referência: rios, prédios, praças, montanhas",
+        ]},
+        {"titulo": "Pelo Sol", "itens": [
+            "O Sol nasce a Leste e se põe a Oeste",
+            "Braço direito a Leste: à frente fica o Norte",
+            "Atrás fica o Sul e à esquerda o Oeste",
+        ]},
+        {"titulo": "Rosa dos ventos", "itens": [
+            "Cardeais: Norte, Sul, Leste e Oeste",
+            "Colaterais: NE, SE, SO e NO",
+        ]},
+        {"titulo": "Instrumentos", "itens": [
+            "Bússola: a agulha imantada aponta para o Norte magnético",
+            "GPS: usa satélites para indicar a posição exata",
+            "Mapas e aplicativos de navegação",
+        ]},
+        {"titulo": "À noite", "itens": [
+            "Cruzeiro do Sul: indica o Sul no Hemisfério Sul",
+            "Estrela Polar: indica o Norte no Hemisfério Norte",
+        ]},
+    ],
+}
+
+_EXEMPLO_FICHA_HISTORIA = {
+    "titulo": "Revolução Industrial",
+    "ramos": [
+        {"titulo": "Onde e quando", "itens": [
+            "Começou na Inglaterra, no século 18",
+            "Espalhou-se depois pela Europa e pelo mundo",
+        ]},
+        {"titulo": "Mudanças na produção", "itens": [
+            "Máquina a vapor: nova fonte de energia",
+            "Fábricas substituem o trabalho artesanal",
+            "Produção em massa, mais rápida e barata",
+        ]},
+        {"titulo": "Mudanças sociais", "itens": [
+            "Burguesia: donos das fábricas e do capital",
+            "Proletariado: trabalhadores das fábricas",
+            "Jornadas de trabalho longas e salários baixos",
+        ]},
+        {"titulo": "Ideias em disputa", "itens": [
+            "Liberalismo: Estado mínimo, livre mercado",
+            "Socialismo: crítica à exploração dos trabalhadores",
+        ]},
+    ],
+}
+
+MAPA_SYSTEM_PROMPT = (
+    "Você cria fichas de mapa mental para a Estudativa, uma plataforma de estudos "
+    "para o Ensino Fundamental brasileiro (1º ao 9º ano), seguindo rigorosamente a "
+    "BNCC. Responda SEMPRE em JSON puro, com exatamente este formato:\n"
+    '{"titulo": "...", "ramos": [{"titulo": "...", "itens": ["...", "..."]}]}\n\n'
+    "Regras obrigatórias:\n"
+    "- Entre 4 e 6 ramos (nunca menos nem mais).\n"
+    "- Cada ramo tem entre 2 e 4 itens.\n"
+    "- Título do ramo: no máximo 35 caracteres, curto e direto.\n"
+    "- Cada item: no máximo 90 caracteres. Quando fizer sentido, use o formato "
+    "\"Termo: definição curta\" (o termo antes dos dois-pontos fica em negrito).\n"
+    "- Linguagem adequada à idade do ano escolar informado (mais simples para "
+    "anos iniciais, mais técnica para os finais), sempre com rigor de conteúdo "
+    "e correção factual.\n"
+    "- Não inclua emojis, ícones nem qualquer campo além de \"titulo\" e \"ramos\".\n"
+    "- Não inclua texto fora do JSON.\n\n"
+    "Exemplo (Geografia, 6º ano):\n" + json.dumps(_EXEMPLO_FICHA_GEOGRAFIA, ensure_ascii=False) + "\n\n"
+    "Exemplo (História, 8º ano):\n" + json.dumps(_EXEMPLO_FICHA_HISTORIA, ensure_ascii=False)
+)
+
+# Limite de uso por IP (a /api/tutor não tinha nenhum — esta rota consome mais
+# tokens por chamada, então criamos o limite aqui): poucas gerações por hora.
+MAPA_RATE_LIMIT = 6
+MAPA_RATE_WINDOW = 60 * 60
+_mapa_rate_hits: dict[str, list[float]] = {}
+
+
+def _checar_rate_limit_mapa(ip):
+    agora = time.time()
+    hist = [t for t in _mapa_rate_hits.get(ip, []) if agora - t < MAPA_RATE_WINDOW]
+    if len(hist) >= MAPA_RATE_LIMIT:
+        _mapa_rate_hits[ip] = hist
+        return False
+    hist.append(agora)
+    _mapa_rate_hits[ip] = hist
+    return True
+
+
+def _normalizar_tema(s):
+    s = _sem_acento(s.lower())
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+
+
+def validar_ficha_mapa(ficha):
+    """Garante que a ficha (vinda da IA ou de uma edição do admin) respeita o
+    formato fixo que o desenho no navegador espera. Levanta ValueError com uma
+    mensagem explicável quando não respeita."""
+    if not isinstance(ficha, dict):
+        raise ValueError("Formato de ficha inválido.")
+    titulo = str(ficha.get("titulo", "")).strip()
+    ramos = ficha.get("ramos")
+    if not titulo:
+        raise ValueError("A ficha ficou sem título.")
+    if not isinstance(ramos, list) or not (4 <= len(ramos) <= 6):
+        raise ValueError("A ficha precisa ter entre 4 e 6 ramos.")
+    limpos = []
+    for r in ramos:
+        if not isinstance(r, dict):
+            raise ValueError("Ramo em formato inválido.")
+        rtitulo = str(r.get("titulo", "")).strip()
+        itens = r.get("itens")
+        if not rtitulo or len(rtitulo) > 60:
+            raise ValueError("Título de ramo inválido ou muito longo.")
+        if not isinstance(itens, list) or not (2 <= len(itens) <= 4):
+            raise ValueError("Cada ramo precisa ter entre 2 e 4 itens.")
+        itens_limpos = []
+        for it in itens:
+            it = str(it).strip()
+            if not it or len(it) > 140:
+                raise ValueError("Item vazio ou muito longo.")
+            itens_limpos.append(it)
+        limpos.append({"titulo": rtitulo, "itens": itens_limpos})
+    return {"titulo": titulo, "ramos": limpos}
+
+
+async def gerar_mapa_com_ia(disciplina, ano, tema):
+    key = get_groq_key()
+    if not key:
+        raise RuntimeError("groq_sem_chave")
+    user_msg = (
+        f'Crie a ficha de mapa mental sobre o tema "{tema}", para a disciplina '
+        f"{disciplina}, no {ano} do Ensino Fundamental brasileiro, seguindo "
+        "rigorosamente o formato, o tamanho e a BNCC."
+    )
+    import httpx
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={
+                "model": GROQ_MODEL,
+                "messages": [
+                    {"role": "system", "content": MAPA_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
+                "temperature": 0.4,
+                "max_tokens": 900,
+                "response_format": {"type": "json_object"},
+            },
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(f"groq_erro_{resp.status_code}: {resp.text[:300]}")
+    data = resp.json()
+    raw = data["choices"][0]["message"]["content"]
+    ficha = json.loads(raw)
+    return validar_ficha_mapa(ficha)
+
+
+class MapaRequest(BaseModel):
+    disciplina: str
+    ano: str
+    tema: str
+    autor: str | None = None
+
+
+@app.post("/api/mapa")
+async def criar_mapa(req: MapaRequest, request: Request):
+    disciplina = req.disciplina.strip().lower()
+    ano = req.ano.strip()
+    tema = req.tema.strip()
+    autor = (req.autor or "").strip()[:60]
+
+    if disciplina not in DISCIPLINAS:
+        return JSONResponse({"error": "Disciplina inválida."}, status_code=400)
+    if not ano or len(ano) > 20:
+        return JSONResponse({"error": "Informe o ano (ex.: \"6º ano\")."}, status_code=400)
+    if not tema or len(tema) > 120:
+        return JSONResponse({"error": "Informe um tema (até 120 caracteres)."}, status_code=400)
+
+    ip = request.client.host if request.client else "desconhecido"
+    if not _checar_rate_limit_mapa(ip):
+        return JSONResponse(
+            {"error": f"Limite de {MAPA_RATE_LIMIT} mapas por hora atingido neste endereço. Tente novamente mais tarde."},
+            status_code=429,
+        )
+
+    tema_norm = _normalizar_tema(tema)
+
+    # Cache: se já existir um mapa APROVADO com a mesma disciplina+ano+tema
+    # normalizado, devolve ele direto, sem gastar uma chamada à IA.
+    existentes = load_records("mapas_mentais")
+    cacheado = next(
+        (m for m in existentes if m.get("status") == "aprovado"
+         and m.get("disciplina") == disciplina and m.get("ano") == ano
+         and m.get("temaNormalizado") == tema_norm),
+        None,
+    )
+    if cacheado:
+        return JSONResponse({"mapa": cacheado, "cache": True})
+
+    key = get_groq_key()
+    if not key:
+        return JSONResponse(
+            {"error": "A geração de mapas ainda não foi configurada neste servidor (falta a chave da API). Avise o administrador do site."},
+            status_code=503,
+        )
+
+    ficha = None
+    for tentativa in range(2):  # 1 tentativa + 1 nova tentativa se vier inválida
+        try:
+            ficha = await gerar_mapa_com_ia(disciplina, ano, tema)
+            break
+        except Exception as e:
+            print(f"Mapa mental: tentativa {tentativa + 1} falhou:", repr(e))
+    if ficha is None:
+        return JSONResponse(
+            {"error": "Não consegui gerar um mapa válido para esse tema agora. Tente reformular o tema ou tente de novo em instantes."},
+            status_code=502,
+        )
+
+    entry = save_record("mapas_mentais", {
+        "disciplina": disciplina,
+        "ano": ano,
+        "tema": tema,
+        "temaNormalizado": tema_norm,
+        "titulo": ficha["titulo"],
+        "ramos": ficha["ramos"],
+        "autor": autor or None,
+        "status": "pendente",
+        "oficial": False,
+    })
+    return JSONResponse({"mapa": entry, "cache": False})
+
+
+@app.get("/api/mapas")
+def listar_mapas(disciplina: str | None = None, ano: str | None = None):
+    """Biblioteca pública: só mapas já aprovados (oficiais + comunidade)."""
+    itens = [m for m in load_records("mapas_mentais") if m.get("status") == "aprovado"]
+    if disciplina:
+        itens = [m for m in itens if m.get("disciplina") == disciplina.strip().lower()]
+    if ano:
+        itens = [m for m in itens if m.get("ano") == ano.strip()]
+    return JSONResponse(itens)
+
+
+@app.get("/api/admin/mapas-pendentes")
+def admin_mapas_pendentes(_: bool = Depends(require_admin)):
+    return JSONResponse([m for m in load_records("mapas_mentais") if m.get("status") == "pendente"])
+
+
+class MapaEdicaoRequest(BaseModel):
+    titulo: str
+    ramos: list[dict]
+
+
+@app.put("/api/admin/mapas/{mapa_id}")
+def admin_editar_mapa(mapa_id: str, req: MapaEdicaoRequest, _: bool = Depends(require_admin)):
+    try:
+        ficha = validar_ficha_mapa({"titulo": req.titulo, "ramos": req.ramos})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    atualizado = update_record("mapas_mentais", mapa_id, {"titulo": ficha["titulo"], "ramos": ficha["ramos"]})
+    if not atualizado:
+        return JSONResponse({"error": "Mapa não encontrado."}, status_code=404)
+    return JSONResponse(atualizado)
+
+
+@app.post("/api/admin/mapas/{mapa_id}/aprovar")
+def admin_aprovar_mapa(mapa_id: str, _: bool = Depends(require_admin)):
+    atualizado = update_record("mapas_mentais", mapa_id, {"status": "aprovado"})
+    if not atualizado:
+        return JSONResponse({"error": "Mapa não encontrado (já pode ter sido revisado)."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/admin/mapas/{mapa_id}/rejeitar")
+def admin_rejeitar_mapa(mapa_id: str, _: bool = Depends(require_admin)):
+    if not delete_record("mapas_mentais", mapa_id):
+        return JSONResponse({"error": "Mapa não encontrado (já pode ter sido revisado)."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
 async def send(ws, message):
     try:
         await ws.send_json(message)
