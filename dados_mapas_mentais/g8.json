@@ -1,0 +1,79 @@
+[
+{"disciplina":"Geografia","ano":"8º ano","num":1,"titulo":"Divisão Política do Mundo e o Estado-Nação","ic":"🌍🏛️","ramos":[
+ {"titulo":"Estado","ic":"🏛️","itens":["Instituição que governa um território","Tem soberania: poder sobre seu território","Território, povo e governo"]},
+ {"titulo":"Nação","ic":"👥","itens":["Grupo com língua, história e cultura em comum","Uma nação pode não ter Estado (curdos)"]},
+ {"titulo":"Estado-nação","ic":"🤝","itens":["Quando Estado e nação coincidem","Modelo surgido na Europa moderna"]},
+ {"titulo":"Fronteiras","ic":"🚧","itens":["Limites que separam os países","Naturais (rios, montanhas) ou artificiais","Muitas foram traçadas por colonizadores"]},
+ {"titulo":"Mapa político","ic":"🗺️","itens":["Cerca de 190 países reconhecidos pela ONU","Muda com guerras, independências e acordos"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":2,"titulo":"Globalização e Blocos Econômicos","ic":"🌐🤝","ramos":[
+ {"titulo":"Globalização","ic":"🌐","itens":["Integração econômica, cultural e tecnológica do mundo","Acelerada pela internet e pelos transportes"]},
+ {"titulo":"Fluxos","ic":"🔁","itens":["Mercadorias, capitais, informações e pessoas","Empresas transnacionais em vários países"]},
+ {"titulo":"Blocos econômicos","ic":"🧩","itens":["Países se unem para facilitar o comércio","Zona de livre comércio, união aduaneira, mercado comum"]},
+ {"titulo":"Exemplos","ic":"🗺️","itens":["Mercosul: Brasil, Argentina, Paraguai, Uruguai…","União Europeia: moeda comum, o euro","USMCA (antigo Nafta), APEC, Asean"]},
+ {"titulo":"Efeitos","ic":"⚖️","itens":["Mais comércio e acesso a produtos","Desigualdade entre países e regiões","Perda de culturas locais"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":3,"titulo":"Geopolítica Mundial: da Guerra Fria à Nova Ordem","ic":"🌍⚔️","ramos":[
+ {"titulo":"Guerra Fria","ic":"❄️","itens":["1947–1991: EUA × União Soviética","Capitalismo × socialismo","Mundo bipolar"]},
+ {"titulo":"Disputas","ic":"🚀","itens":["Corrida armamentista e nuclear","Corrida espacial","Muro de Berlim (1961–1989)"]},
+ {"titulo":"Fim da Guerra Fria","ic":"🧱","itens":["Queda do Muro de Berlim (1989)","Fim da União Soviética (1991)"]},
+ {"titulo":"Nova Ordem","ic":"🌐","itens":["EUA como grande potência","Depois: mundo multipolar","China, União Europeia, Rússia e outros"]},
+ {"titulo":"Organizações","ic":"🏛️","itens":["ONU: paz e cooperação","OTAN: aliança militar ocidental"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":4,"titulo":"Países Desenvolvidos e em Desenvolvimento","ic":"📊🌍","ramos":[
+ {"titulo":"Desenvolvidos","ic":"🏙️","itens":["Economia industrializada e diversificada","Alta renda e boa qualidade de vida","Exemplos: EUA, Japão, Alemanha"]},
+ {"titulo":"Em desenvolvimento","ic":"🏗️","itens":["Desigualdade social mais alta","Economia em crescimento","Emergentes: Brasil, China, Índia"]},
+ {"titulo":"IDH","ic":"📈","itens":["Índice de Desenvolvimento Humano (ONU)","Mede renda, educação e saúde (expectativa de vida)","Vai de 0 a 1"]},
+ {"titulo":"Origens da desigualdade","ic":"⛓️","itens":["Colonização e exploração","Dependência tecnológica","Divisão Internacional do Trabalho"]},
+ {"titulo":"Norte × Sul","ic":"🧭","itens":["Divisão socioeconômica, não geográfica","Norte: mais rico; Sul: em desenvolvimento"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":5,"titulo":"População Mundial e Dinâmica Demográfica","ic":"👥🌍","ramos":[
+ {"titulo":"Números","ic":"📊","itens":["Mais de 8 bilhões de pessoas","Mais populosos: Índia e China"]},
+ {"titulo":"Conceitos","ic":"📘","itens":["Natalidade: nascimentos","Mortalidade: mortes","Crescimento vegetativo: nascimentos − mortes"]},
+ {"titulo":"Transição demográfica","ic":"📉","itens":["Queda da mortalidade e depois da natalidade","Crescimento populacional desacelera"]},
+ {"titulo":"Pirâmide etária","ic":"🔺","itens":["Mostra a população por idade e sexo","Base larga: muitos jovens","Topo largo: população envelhecida"]},
+ {"titulo":"Desafios","ic":"⚠️","itens":["Envelhecimento em países ricos","Fome e falta de serviços em países pobres"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":6,"titulo":"Migrações Internacionais","ic":"🧳✈️","ramos":[
+ {"titulo":"Conceitos","ic":"📘","itens":["Emigrante: quem sai do seu país","Imigrante: quem chega a outro país"]},
+ {"titulo":"Motivos","ic":"❓","itens":["Busca de emprego e melhores condições","Guerras, perseguições e desastres naturais"]},
+ {"titulo":"Refugiados","ic":"⛺","itens":["Fogem de guerras e perseguições","Protegidos por leis internacionais (ACNUR)","Exemplos: sírios, venezuelanos, ucranianos"]},
+ {"titulo":"Fluxos","ic":"🗺️","itens":["Do Sul em direção ao Norte (Europa, EUA)","Também entre países vizinhos"]},
+ {"titulo":"Desafios","ic":"⚖️","itens":["Xenofobia: aversão a estrangeiros","Trabalho precário e ilegalidade","Contribuição cultural e econômica"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":7,"titulo":"Industrialização e Urbanização Mundial","ic":"🏭🏙️","ramos":[
+ {"titulo":"Revoluções Industriais","ic":"⚙️","itens":["1ª: máquina a vapor e carvão (século XVIII)","2ª: eletricidade e petróleo","3ª: informática e robótica"]},
+ {"titulo":"Indústria hoje","ic":"🤖","itens":["Indústria 4.0: automação e internet","Fábricas migram para países com mão de obra barata"]},
+ {"titulo":"Urbanização","ic":"🏙️","itens":["Mais da metade da humanidade vive em cidades","Ligada à industrialização"]},
+ {"titulo":"Grandes cidades","ic":"🌆","itens":["Megacidades: mais de 10 milhões de habitantes","Cidades globais: Nova York, Londres, Tóquio"]},
+ {"titulo":"Problemas urbanos","ic":"⚠️","itens":["Moradia precária, poluição, trânsito","Segregação socioespacial"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":8,"titulo":"Geografia da América: do Norte ao Sul","ic":"🌎","ramos":[
+ {"titulo":"Regionalização","ic":"🗺️","itens":["Física: do Norte, Central e do Sul","Cultural: América Anglo-Saxônica e Latina"]},
+ {"titulo":"Natureza","ic":"⛰️","itens":["Cordilheiras a oeste: Rochosas e Andes","Planícies centrais","Rios: Amazonas, Mississippi, Paraná"]},
+ {"titulo":"Anglo-Saxônica","ic":"🏙️","itens":["EUA e Canadá","Países desenvolvidos e industrializados"]},
+ {"titulo":"América Latina","ic":"🌮","itens":["Colonização espanhola e portuguesa","Desigualdade social","Exportação de produtos primários"]},
+ {"titulo":"Integração","ic":"🤝","itens":["Mercosul, USMCA","Fluxos de migrantes para os EUA"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":9,"titulo":"Geografia da África","ic":"🌍🦁","ramos":[
+ {"titulo":"Natureza","ic":"🏜️","itens":["Deserto do Saara ao norte","Savanas e florestas equatoriais","Rio Nilo: o mais longo do continente"]},
+ {"titulo":"Colonização","ic":"⛓️","itens":["Partilha da África: Conferência de Berlim (1884–1885)","Fronteiras artificiais","Independências após 1950"]},
+ {"titulo":"Regionalização","ic":"🗺️","itens":["África Setentrional: norte, cultura árabe","África Subsaariana: sul do Saara"]},
+ {"titulo":"Desafios","ic":"⚠️","itens":["Conflitos étnicos e guerras civis","Pobreza e fome","Desigualdade herdada da colonização"]},
+ {"titulo":"Potencialidades","ic":"💎","itens":["Grande riqueza mineral","População jovem","Diversidade cultural imensa"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":10,"titulo":"Geografia da Ásia","ic":"🌏🏯","ramos":[
+ {"titulo":"Natureza","ic":"🏔️","itens":["Maior continente do planeta","Himalaia: Monte Everest, ponto mais alto","Monções: ventos que trazem chuvas"]},
+ {"titulo":"População","ic":"👥","itens":["Mais da metade da população mundial","China e Índia: os mais populosos"]},
+ {"titulo":"Potências","ic":"🏭","itens":["China: 2ª maior economia do mundo","Japão: alta tecnologia","Tigres Asiáticos: Coreia do Sul, Taiwan, Singapura"]},
+ {"titulo":"Oriente Médio","ic":"🛢️","itens":["Grandes reservas de petróleo","Conflitos e disputas por território"]},
+ {"titulo":"Diversidade","ic":"🕌","itens":["Berço de grandes religiões","Muitas línguas e culturas"]}
+]},
+{"disciplina":"Geografia","ano":"8º ano","num":11,"titulo":"Geografia da Oceania","ic":"🌏🦘","ramos":[
+ {"titulo":"Formação","ic":"🏝️","itens":["Austrália, Nova Zelândia e milhares de ilhas","Melanésia, Micronésia e Polinésia"]},
+ {"titulo":"Austrália","ic":"🦘","itens":["País-continente, interior desértico","Economia forte: minérios e agropecuária","Fauna única: canguru, coala"]},
+ {"titulo":"Nova Zelândia","ic":"🐑","itens":["Desenvolvida, com pecuária de ovelhas","Povo maori: cultura originária"]},
+ {"titulo":"Povos originários","ic":"🪃","itens":["Aborígenes australianos e maoris","Lutam por direitos e terras"]},
+ {"titulo":"Desafios","ic":"🌊","itens":["Aumento do nível do mar ameaça ilhas","Proteção da Grande Barreira de Corais"]}
+]}
+]

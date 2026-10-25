@@ -1,0 +1,73 @@
+[
+{"disciplina":"Geografia","ano":"7º ano","num":1,"titulo":"Formação do Território Brasileiro","ic":"🇧🇷📜","ramos":[
+ {"titulo":"Tratado de Tordesilhas","ic":"📜","itens":["1494: divisão de terras entre Portugal e Espanha","Linha imaginária a 370 léguas de Cabo Verde"]},
+ {"titulo":"Expansão para o interior","ic":"🧭","itens":["Bandeirantes: busca de ouro e indígenas","Entradas, missões jesuíticas e pecuária","Ocupação além da linha de Tordesilhas"]},
+ {"titulo":"Novos tratados","ic":"✍️","itens":["Tratado de Madri (1750): uti possidetis, a terra é de quem ocupa","Tratado de Petrópolis (1903): Acre comprado da Bolívia"]},
+ {"titulo":"Brasil hoje","ic":"🗺️","itens":["Cerca de 8,5 milhões de km²","5º maior país do mundo em área","Fronteira com 10 países da América do Sul"]},
+ {"titulo":"Divisão política","ic":"🏛️","itens":["26 estados e o Distrito Federal","Capital federal: Brasília (desde 1960)"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":2,"titulo":"Regiões Brasileiras: Divisão Regional do IBGE","ic":"🗺️🇧🇷","ramos":[
+ {"titulo":"O IBGE","ic":"📊","itens":["Instituto Brasileiro de Geografia e Estatística","Divide o país seguindo limites dos estados","Facilita estatísticas e planejamento"]},
+ {"titulo":"Norte e Centro-Oeste","ic":"🌳","itens":["Norte: maior região, Floresta Amazônica","Centro-Oeste: Cerrado, Pantanal e agronegócio"]},
+ {"titulo":"Nordeste","ic":"🌵","itens":["9 estados, grande litoral","Zona da Mata, Agreste, Sertão e Meio-Norte"]},
+ {"titulo":"Sudeste e Sul","ic":"🏙️","itens":["Sudeste: mais populoso e industrializado","Sul: clima subtropical, forte influência europeia"]},
+ {"titulo":"Complexos regionais","ic":"🧩","itens":["Outra divisão (Pedro Geiger): Amazônia, Nordeste e Centro-Sul","Não segue os limites dos estados"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":3,"titulo":"Relevo do Território Brasileiro","ic":"⛰️🇧🇷","ramos":[
+ {"titulo":"Características","ic":"🔎","itens":["Relevo antigo e muito desgastado pela erosão","Altitudes modestas: não há grandes cordilheiras","Ponto mais alto: Pico da Neblina (cerca de 2.995 m)"]},
+ {"titulo":"Planaltos","ic":"🏔️","itens":["Predominam no território","Exemplos: Planalto Central e planaltos do Atlântico","Serras: do Mar e da Mantiqueira"]},
+ {"titulo":"Planícies","ic":"🏞️","itens":["Áreas planas com acúmulo de sedimentos","Planície do Pantanal e Planície Amazônica","Planícies litorâneas"]},
+ {"titulo":"Depressões","ic":"⬇️","itens":["Áreas rebaixadas pela erosão","Exemplo: Depressão Sertaneja"]},
+ {"titulo":"Classificação","ic":"📘","itens":["Jurandyr Ross (1989): planaltos, planícies e depressões","Base nos processos que formaram o relevo"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":4,"titulo":"Clima Brasileiro","ic":"🌦️🇧🇷","ramos":[
+ {"titulo":"Fatores","ic":"🌍","itens":["Maior parte do país na zona tropical","Massas de ar: Equatorial, Tropical e Polar","Relevo e proximidade do mar"]},
+ {"titulo":"Equatorial e tropical","ic":"🌴","itens":["Equatorial: quente e chuvoso o ano todo (Amazônia)","Tropical: verão chuvoso e inverno seco (Centro do país)"]},
+ {"titulo":"Litorâneo e de altitude","ic":"⛰️","itens":["Tropical litorâneo: úmido, chuvas o ano todo","Tropical de altitude: temperaturas mais amenas"]},
+ {"titulo":"Semiárido","ic":"🌵","itens":["Sertão nordestino","Chuvas escassas e mal distribuídas","Longos períodos de seca"]},
+ {"titulo":"Subtropical","ic":"❄️","itens":["Região Sul","Estações bem definidas e inverno frio","Pode haver geadas e até neve"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":5,"titulo":"Hidrografia Brasileira","ic":"💧🏞️","ramos":[
+ {"titulo":"Riqueza hídrica","ic":"🌎","itens":["Cerca de 12% da água doce superficial do planeta","Rios perenes na maior parte do país","Muitos rios de planalto: potencial hidrelétrico"]},
+ {"titulo":"Amazônica","ic":"🌳","itens":["Maior bacia hidrográfica do mundo","Rio Amazonas: o mais volumoso do planeta","Muito usada para transporte (hidrovias)"]},
+ {"titulo":"São Francisco","ic":"🛶","itens":["Rio da integração nacional","Atravessa o semiárido nordestino","Hidrelétricas e irrigação"]},
+ {"titulo":"Paraná e Tocantins","ic":"⚡","itens":["Paraná: maior potencial hidrelétrico (Itaipu)","Tocantins-Araguaia: Usina de Tucuruí"]},
+ {"titulo":"Aquíferos","ic":"🚰","itens":["Água subterrânea","Aquífero Guarani e Sistema Aquífero Grande Amazônia"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":6,"titulo":"Biomas Brasileiros","ic":"🌳🐆🌵","ramos":[
+ {"titulo":"Amazônia","ic":"🌳","itens":["Maior floresta tropical do mundo","Enorme biodiversidade","Ameaça: desmatamento e queimadas"]},
+ {"titulo":"Cerrado","ic":"🌾","itens":["Savana brasileira, árvores de galhos tortos","Berço das águas: nascentes de grandes rios","Ameaça: expansão agropecuária"]},
+ {"titulo":"Mata Atlântica","ic":"🦜","itens":["Floresta do litoral","Bioma mais devastado (resta pouca mata original)"]},
+ {"titulo":"Caatinga","ic":"🌵","itens":["Único bioma exclusivamente brasileiro","Plantas adaptadas à seca (cactos)"]},
+ {"titulo":"Pantanal","ic":"🐊","itens":["Maior planície alagável do mundo","Cheias e secas marcam o ano"]},
+ {"titulo":"Pampa","ic":"🐄","itens":["Campos do Rio Grande do Sul","Vegetação rasteira, uso para pecuária"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":7,"titulo":"População Brasileira: Formação e Distribuição","ic":"👨‍👩‍👧‍👦🇧🇷","ramos":[
+ {"titulo":"Formação","ic":"🤝","itens":["Povos indígenas: primeiros habitantes","Europeus: principalmente portugueses","Africanos escravizados","Imigrantes: italianos, japoneses, alemães, árabes…"]},
+ {"titulo":"Números","ic":"📊","itens":["Mais de 200 milhões de habitantes","Entre os países mais populosos do mundo","Dados do Censo do IBGE"]},
+ {"titulo":"Distribuição","ic":"🗺️","itens":["Populoso: muitos habitantes no total","Pouco povoado: baixa densidade demográfica","Concentração no litoral e no Sudeste"]},
+ {"titulo":"Estrutura","ic":"📈","itens":["Queda na taxa de natalidade","Aumento da expectativa de vida","População envelhecendo"]},
+ {"titulo":"Diversidade","ic":"🎭","itens":["Mistura de culturas, religiões e costumes","Combate ao racismo e à desigualdade"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":8,"titulo":"Urbanização Brasileira","ic":"🏙️🚌","ramos":[
+ {"titulo":"Êxodo rural","ic":"🚜","itens":["Saída do campo para a cidade","Mecanização do campo e busca por emprego","Forte a partir de 1950"]},
+ {"titulo":"Hoje","ic":"📊","itens":["Mais de 80% dos brasileiros vivem em cidades","Industrialização acelerou o processo"]},
+ {"titulo":"Rede urbana","ic":"🕸️","itens":["Metrópoles: São Paulo e Rio de Janeiro","Regiões metropolitanas","Conurbação: cidades que se juntam"]},
+ {"titulo":"Problemas","ic":"⚠️","itens":["Moradias precárias e favelas","Trânsito, poluição e enchentes","Falta de saneamento básico"]},
+ {"titulo":"Soluções","ic":"🌱","itens":["Planejamento urbano e Plano Diretor","Transporte público de qualidade","Áreas verdes e saneamento"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":9,"titulo":"Agropecuária e Uso da Terra no Brasil","ic":"🚜🌽🐄","ramos":[
+ {"titulo":"Agricultura","ic":"🌱","itens":["Soja, milho, café, cana-de-açúcar","Brasil: grande exportador de alimentos"]},
+ {"titulo":"Pecuária","ic":"🐄","itens":["Extensiva: gado solto em grandes áreas","Intensiva: confinado, com mais tecnologia","Um dos maiores rebanhos bovinos do mundo"]},
+ {"titulo":"Agronegócio","ic":"🏭","itens":["Une campo, indústria e comércio","Grandes propriedades e monocultura","Uso de máquinas e tecnologia"]},
+ {"titulo":"Agricultura familiar","ic":"🧺","itens":["Pequenas propriedades","Produz boa parte dos alimentos da mesa"]},
+ {"titulo":"Questões","ic":"⚖️","itens":["Concentração de terras e reforma agrária","Desmatamento e uso de agrotóxicos","Produção sustentável"]}
+]},
+{"disciplina":"Geografia","ano":"7º ano","num":10,"titulo":"Indústria e Fontes de Energia no Brasil","ic":"🏭⚡","ramos":[
+ {"titulo":"Industrialização","ic":"⚙️","itens":["Tardia: ganha força após 1930","Getúlio Vargas: indústria de base (CSN, Petrobras)","Juscelino Kubitschek: indústria automobilística"]},
+ {"titulo":"Onde estão","ic":"🗺️","itens":["Concentração no Sudeste (São Paulo)","Desconcentração para outras regiões","Zona Franca de Manaus"]},
+ {"titulo":"Hidrelétricas","ic":"💧","itens":["Principal fonte de eletricidade do país","Itaipu, Belo Monte, Tucuruí","Impactos: alagamento e remoção de pessoas"]},
+ {"titulo":"Combustíveis","ic":"⛽","itens":["Petróleo: pré-sal","Etanol da cana-de-açúcar","Gás natural e carvão"]},
+ {"titulo":"Renováveis","ic":"🌬️","itens":["Eólica: forte no Nordeste","Solar em crescimento","Matriz energética relativamente limpa"]}
+]}
+]

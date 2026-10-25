@@ -1,0 +1,65 @@
+[
+{"disciplina":"Geografia","ano":"9º ano","num":1,"titulo":"Geopolítica Mundial Contemporânea","ic":"🌐♟️","ramos":[
+ {"titulo":"Mundo multipolar","ic":"🌍","itens":["Vários centros de poder","EUA, China, União Europeia e Rússia"]},
+ {"titulo":"Poder","ic":"💪","itens":["Econômico: comércio e tecnologia","Militar: armas e alianças","Brando (soft power): cultura e influência"]},
+ {"titulo":"EUA × China","ic":"⚖️","itens":["Disputa comercial e tecnológica","Corrida por inovação (chips, inteligência artificial)"]},
+ {"titulo":"Organismos","ic":"🏛️","itens":["ONU e Conselho de Segurança","OMC, FMI e Banco Mundial","G7, G20 e BRICS"]},
+ {"titulo":"Temas globais","ic":"🌱","itens":["Clima, energia, migrações","Terrorismo e segurança"]}
+]},
+{"disciplina":"Geografia","ano":"9º ano","num":2,"titulo":"Conflitos Internacionais Contemporâneos","ic":"🕊️⚠️","ramos":[
+ {"titulo":"Causas","ic":"❓","itens":["Disputas por território e recursos","Questões étnicas e religiosas","Interesses de potências"]},
+ {"titulo":"Oriente Médio","ic":"🛢️","itens":["Conflito israelo-palestino","Guerra na Síria","Disputas pelo petróleo"]},
+ {"titulo":"Europa","ic":"🛡️","itens":["Guerra entre Rússia e Ucrânia (desde 2022)","Tensão entre Rússia e OTAN"]},
+ {"titulo":"África","ic":"🌍","itens":["Guerras civis e conflitos étnicos","Herança das fronteiras coloniais"]},
+ {"titulo":"Consequências","ic":"⛺","itens":["Refugiados e crises humanitárias","Destruição e mortes","ONU atua em missões de paz"]}
+]},
+{"disciplina":"Geografia","ano":"9º ano","num":3,"titulo":"União Europeia e Blocos Econômicos","ic":"🇪🇺🤝","ramos":[
+ {"titulo":"Origem","ic":"📜","itens":["Após a Segunda Guerra Mundial","CECA (1951) e Comunidade Econômica Europeia (1957)","Tratado de Maastricht (1992): nasce a UE"]},
+ {"titulo":"Como funciona","ic":"⚙️","itens":["Livre circulação de pessoas, mercadorias e capitais","Parlamento Europeu","Euro: moeda comum de muitos membros"]},
+ {"titulo":"Desafios","ic":"⚠️","itens":["Brexit: saída do Reino Unido (2020)","Crises econômicas e migratórias"]},
+ {"titulo":"Outros blocos","ic":"🧩","itens":["Mercosul, USMCA, Asean","União Africana"]},
+ {"titulo":"Níveis de integração","ic":"🪜","itens":["Livre comércio → união aduaneira","Mercado comum → união econômica e monetária"]}
+]},
+{"disciplina":"Geografia","ano":"9º ano","num":4,"titulo":"Mudanças Climáticas e Aquecimento Global","ic":"🌡️🌍","ramos":[
+ {"titulo":"Efeito estufa","ic":"🏠","itens":["Fenômeno natural que mantém a Terra aquecida","Gases: gás carbônico (CO₂), metano"]},
+ {"titulo":"Aquecimento global","ic":"🔥","itens":["Intensificação do efeito estufa pelo ser humano","Queima de combustíveis fósseis","Desmatamento e queimadas"]},
+ {"titulo":"Consequências","ic":"🌊","itens":["Derretimento de geleiras","Aumento do nível do mar","Eventos extremos: secas, enchentes, ondas de calor"]},
+ {"titulo":"Acordos","ic":"✍️","itens":["Protocolo de Kyoto (1997)","Acordo de Paris (2015)","Conferências do clima (COP)"]},
+ {"titulo":"Soluções","ic":"🌱","itens":["Energias renováveis","Reflorestamento","Consumo consciente"]}
+]},
+{"disciplina":"Geografia","ano":"9º ano","num":5,"titulo":"Geografia da Europa","ic":"🌍🏰","ramos":[
+ {"titulo":"Natureza","ic":"⛰️","itens":["Alpes e Pirineus","Grandes planícies (Planície Europeia)","Clima temperado na maior parte"]},
+ {"titulo":"Regiões","ic":"🗺️","itens":["Ocidental, Oriental, Nórdica, Mediterrânea"]},
+ {"titulo":"Economia","ic":"🏭","itens":["Berço da Revolução Industrial","Alta tecnologia e serviços","Alemanha: maior economia do continente"]},
+ {"titulo":"População","ic":"👴","itens":["Envelhecida e com baixa natalidade","Recebe muitos imigrantes"]},
+ {"titulo":"Questões atuais","ic":"⚠️","itens":["Guerra na Ucrânia","Dependência de energia","Xenofobia e nacionalismos"]}
+]},
+{"disciplina":"Geografia","ano":"9º ano","num":6,"titulo":"Recursos Naturais e Fontes de Energia","ic":"⚡🌍","ramos":[
+ {"titulo":"Recursos naturais","ic":"🌳","itens":["Renováveis: água, sol, vento, florestas","Não renováveis: petróleo, carvão, minérios"]},
+ {"titulo":"Combustíveis fósseis","ic":"🛢️","itens":["Petróleo, carvão e gás natural","Ainda são a base da energia mundial","Poluem e aumentam o efeito estufa"]},
+ {"titulo":"Energias limpas","ic":"☀️","itens":["Solar, eólica, hidrelétrica","Biomassa e biocombustíveis"]},
+ {"titulo":"Nuclear","ic":"☢️","itens":["Não emite gases estufa","Risco de acidentes e lixo radioativo"]},
+ {"titulo":"Geopolítica","ic":"♟️","itens":["Disputas por petróleo e minérios","Transição energética"]}
+]},
+{"disciplina":"Geografia","ano":"9º ano","num":7,"titulo":"Globalização e Tecnologia na Nova Ordem Mundial","ic":"💻🌐","ramos":[
+ {"titulo":"Meio técnico-científico-informacional","ic":"🛰️","itens":["Ciência e tecnologia transformam o espaço","Conceito de Milton Santos"]},
+ {"titulo":"Tecnologias","ic":"📱","itens":["Internet, satélites e smartphones","Inteligência artificial e automação"]},
+ {"titulo":"Economia","ic":"💹","itens":["Empresas transnacionais","Mercado financeiro conectado 24 horas"]},
+ {"titulo":"Desigualdades","ic":"⚖️","itens":["Exclusão digital","Concentração de riqueza e tecnologia"]},
+ {"titulo":"Cultura","ic":"🎬","itens":["Cultura de massa global","Redes sociais e notícias falsas"]}
+]},
+{"disciplina":"Geografia","ano":"9º ano","num":8,"titulo":"Países Desenvolvidos, Emergentes e em Desenvolvimento","ic":"📊🌍","ramos":[
+ {"titulo":"Desenvolvidos","ic":"🏙️","itens":["Alto IDH e renda","Indústria e serviços avançados","Exemplos: EUA, Alemanha, Japão"]},
+ {"titulo":"Emergentes","ic":"🚀","itens":["Economia em rápido crescimento","BRICS: Brasil, Rússia, Índia, China, África do Sul e novos membros"]},
+ {"titulo":"Em desenvolvimento","ic":"🏗️","itens":["Renda mais baixa","Dependência de produtos primários"]},
+ {"titulo":"Como medir","ic":"📈","itens":["IDH: renda, educação e saúde","PIB e PIB por pessoa","Índice de Gini: desigualdade"]},
+ {"titulo":"Brasil","ic":"🇧🇷","itens":["País emergente","Grande economia, mas muito desigual"]}
+]},
+{"disciplina":"Geografia","ano":"9º ano","num":9,"titulo":"Fronteiras, Território e Soberania","ic":"🗺️🛂","ramos":[
+ {"titulo":"Território","ic":"🏞️","itens":["Espaço sob o poder de um Estado","Inclui solo, subsolo, espaço aéreo e mar"]},
+ {"titulo":"Soberania","ic":"👑","itens":["Poder do Estado de decidir sobre seu território","Respeitada por outros países"]},
+ {"titulo":"Fronteiras","ic":"🚧","itens":["Limites entre territórios","Zonas de troca e também de conflito"]},
+ {"titulo":"Mar territorial","ic":"🌊","itens":["12 milhas náuticas da costa","Zona Econômica Exclusiva: 200 milhas","Amazônia Azul (Brasil)"]},
+ {"titulo":"Disputas","ic":"⚔️","itens":["Conflitos por fronteiras e recursos","Exemplos: Caxemira, Crimeia"]}
+]}
+]

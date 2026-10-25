@@ -1,0 +1,82 @@
+[
+{"disciplina":"Geografia","ano":"6º ano","num":1,"titulo":"Orientação e Localização no Espaço","ic":"🧭🌞🗺️","ramos":[
+ {"titulo":"Orientar-se","ic":"🧍","itens":["Orientação: saber a direção a seguir","Localização: saber onde um lugar está","Pontos de referência: rios, prédios, praças, montanhas"]},
+ {"titulo":"Pelo Sol","ic":"🌅","itens":["O Sol nasce a Leste e se põe a Oeste","Braço direito a Leste: à frente fica o Norte","Atrás fica o Sul e à esquerda o Oeste"]},
+ {"titulo":"Rosa dos ventos","ic":"🧭","itens":["Cardeais: Norte, Sul, Leste e Oeste","Colaterais: NE, SE, SO e NO","Subcolaterais: NNE, ENE, ESE, SSE…"]},
+ {"titulo":"Instrumentos","ic":"🛰️","itens":["Bússola: a agulha imantada aponta para o Norte magnético","GPS: usa satélites para indicar a posição exata","Mapas e aplicativos de navegação"]},
+ {"titulo":"À noite","ic":"✨","itens":["Cruzeiro do Sul: indica o Sul no Hemisfério Sul","Estrela Polar: indica o Norte no Hemisfério Norte"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":2,"titulo":"Coordenadas Geográficas: Latitude e Longitude","ic":"🌐📍","ramos":[
+ {"titulo":"Paralelos","ic":"↔️","itens":["Linhas imaginárias paralelas à Linha do Equador","Equador (0°): divide Hemisfério Norte e Sul","Trópicos de Câncer e Capricórnio, Círculos Polares"]},
+ {"titulo":"Meridianos","ic":"↕️","itens":["Linhas imaginárias que ligam o Polo Norte ao Polo Sul","Greenwich (0°): divide Hemisfério Leste e Oeste","Antimeridiano: 180°"]},
+ {"titulo":"Latitude","ic":"📏","itens":["Distância em graus até o Equador","Varia de 0° a 90° Norte ou Sul","Medida sobre os meridianos"]},
+ {"titulo":"Longitude","ic":"📐","itens":["Distância em graus até Greenwich","Varia de 0° a 180° Leste ou Oeste","Medida sobre os paralelos"]},
+ {"titulo":"Para que serve","ic":"📍","itens":["Coordenada: cruzamento de latitude e longitude","Localiza qualquer ponto da Terra com exatidão","Usada pelo GPS, navios e aviões"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":3,"titulo":"Cartografia: Mapas, Escalas e Legendas","ic":"🗺️✏️","ramos":[
+ {"titulo":"O que é","ic":"📚","itens":["Cartografia: ciência que representa a superfície terrestre","Representações: mapas, plantas, cartas e globos"]},
+ {"titulo":"Elementos do mapa","ic":"🧾","itens":["Título: o que o mapa mostra","Legenda: explica cores e símbolos","Orientação (rosa dos ventos), escala e fonte"]},
+ {"titulo":"Escala","ic":"📏","itens":["Relação entre o tamanho no mapa e o real","Numérica: 1:100.000 (1 cm = 1 km)","Gráfica: uma régua desenhada no mapa"]},
+ {"titulo":"Grande × pequena","ic":"🔍","itens":["Escala grande: área pequena com muitos detalhes","Escala pequena: área grande com poucos detalhes"]},
+ {"titulo":"Tipos de mapas","ic":"🗂️","itens":["Políticos: países, estados e fronteiras","Físicos: relevo e rios","Temáticos: clima, população, economia"]},
+ {"titulo":"Projeções","ic":"🌐","itens":["Transformam a Terra esférica em plano","Toda projeção tem distorções","Exemplos: Mercator e Peters"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":4,"titulo":"Fusos Horários","ic":"🕒🌍","ramos":[
+ {"titulo":"Por que existem","ic":"🔄","itens":["A Terra gira 360° em 24 horas (rotação)","Cada hora corresponde a 15° de longitude","Por isso há 24 fusos horários"]},
+ {"titulo":"Referência","ic":"📍","itens":["Greenwich (0°) é o ponto de partida","Hora oficial mundial: UTC"]},
+ {"titulo":"Como calcular","ic":"🧮","itens":["Para Leste: as horas aumentam (+)","Para Oeste: as horas diminuem (−)","Diferença de fusos × 1 hora"]},
+ {"titulo":"Fusos do Brasil","ic":"🇧🇷","itens":["O Brasil tem 4 fusos horários","Horário de Brasília: UTC −3","Do arquipélago de Fernando de Noronha ao Acre"]},
+ {"titulo":"Linha de data","ic":"📅","itens":["Linha Internacional de Data: perto de 180°","Ao cruzá-la, muda o dia do calendário"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":5,"titulo":"Paisagem, Lugar e Espaço Geográfico","ic":"🏞️🏙️","ramos":[
+ {"titulo":"Paisagem","ic":"👀","itens":["Tudo o que percebemos com os sentidos","Natural: pouco modificada pelo ser humano","Cultural (humanizada): transformada pelo trabalho"]},
+ {"titulo":"Lugar","ic":"🏠","itens":["Espaço com o qual temos ligação e afeto","Exemplos: casa, escola, bairro","Cada pessoa vive o lugar de um jeito"]},
+ {"titulo":"Espaço geográfico","ic":"🌎","itens":["Espaço transformado pela sociedade","Resultado da relação entre natureza e trabalho humano","Está sempre em mudança"]},
+ {"titulo":"Território e região","ic":"🗺️","itens":["Território: espaço com poder e fronteiras definidas","Região: área com características parecidas"]},
+ {"titulo":"Paisagem muda","ic":"⏳","itens":["Pela natureza: chuva, vento, erosão","Pela sociedade: cidades, estradas, plantações"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":6,"titulo":"Estrutura Interna da Terra e Placas Tectônicas","ic":"🌍🌋🌊","ramos":[
+ {"titulo":"Camadas da Terra","ic":"🧅","itens":["Crosta: camada sólida e mais fina, onde vivemos","Manto: maior camada, formada por rochas pastosas (magma)","Núcleo externo: líquido, rico em ferro e níquel","Núcleo interno: sólido e muito quente (mais de 5.000 °C)"]},
+ {"titulo":"Placas tectônicas","ic":"🧩","itens":["Litosfera: a crosta é dividida em grandes blocos, as placas","As placas se movem lentamente sobre o manto","Correntes de convecção: o calor do manto move as placas","O Brasil fica no centro da Placa Sul-Americana"]},
+ {"titulo":"Limites entre placas","ic":"⛰️","itens":["Convergente: placas se chocam e formam cordilheiras (Andes)","Divergente: placas se afastam e formam dorsais oceânicas","Transformante: placas deslizam lado a lado (falhas)"]},
+ {"titulo":"Deriva continental","ic":"🗺️","itens":["Alfred Wegener (1912): os continentes se movem","Pangeia: um único supercontinente há cerca de 200 milhões de anos","Provas: encaixe entre América do Sul e África e fósseis iguais"]},
+ {"titulo":"Terremotos e tsunamis","ic":"🌊","itens":["Terremoto: tremor causado pelo choque ou deslizamento das placas","Epicentro: ponto da superfície acima do foco do tremor","Tsunami: ondas gigantes causadas por terremotos no fundo do mar"]},
+ {"titulo":"Vulcanismo","ic":"🌋","itens":["Vulcão: abertura por onde o magma sai como lava","Círculo de Fogo do Pacífico: área com muitos vulcões e terremotos","Efeitos: forma ilhas e deixa o solo fértil"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":7,"titulo":"Relevo Terrestre: Formas e Agentes","ic":"⛰️🏞️","ramos":[
+ {"titulo":"Formas do relevo","ic":"🏔️","itens":["Montanhas: grandes elevações, muitas vezes recentes","Planaltos: áreas altas onde há mais desgaste","Planícies: áreas planas onde há acúmulo de sedimentos","Depressões: áreas mais baixas que o entorno"]},
+ {"titulo":"Agentes internos","ic":"🌋","itens":["Vêm de dentro da Terra e formam o relevo","Tectonismo: movimento das placas","Vulcanismo e terremotos"]},
+ {"titulo":"Agentes externos","ic":"🌬️","itens":["Desgastam e modelam o relevo","Chuva, rios, vento, mar, gelo e seres vivos","Intemperismo: decomposição das rochas"]},
+ {"titulo":"Erosão","ic":"💧","itens":["Retirada e transporte de material do solo","Sedimentação: depósito em áreas mais baixas","Desmatamento aumenta a erosão"]},
+ {"titulo":"Ação humana","ic":"🚜","itens":["Construção de estradas, túneis e aterros","Mineração e cortes em encostas","Pode causar deslizamentos"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":8,"titulo":"Hidrografia: Águas Continentais e Oceânicas","ic":"💧🌊","ramos":[
+ {"titulo":"Água no planeta","ic":"🌍","itens":["Cerca de 97% é salgada (oceanos e mares)","Só 3% é doce, e a maior parte está congelada"]},
+ {"titulo":"Ciclo da água","ic":"🔄","itens":["Evaporação → condensação → precipitação","Infiltração e escoamento superficial","A água circula sem parar"]},
+ {"titulo":"Rios","ic":"🏞️","itens":["Nascente: onde o rio começa","Foz: onde o rio deságua","Afluente: rio que deságua em outro","Bacia hidrográfica: área drenada por um rio e afluentes"]},
+ {"titulo":"Outras águas","ic":"🧊","itens":["Lagos e lagoas","Geleiras e calotas polares","Aquíferos: água subterrânea (Aquífero Guarani)"]},
+ {"titulo":"Oceanos e mares","ic":"🐋","itens":["Pacífico, Atlântico, Índico, Glacial Ártico e Antártico","Mares: partes menores, ligadas aos oceanos","Correntes marítimas influenciam o clima"]},
+ {"titulo":"Usos e cuidados","ic":"🚰","itens":["Abastecimento, agricultura, indústria e energia","Poluição e desperdício ameaçam a água"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":9,"titulo":"Clima: Elementos e Fatores Climáticos","ic":"🌦️🌡️","ramos":[
+ {"titulo":"Tempo × clima","ic":"📅","itens":["Tempo: condição da atmosfera em um momento","Clima: sucessão habitual dos tipos de tempo ao longo dos anos"]},
+ {"titulo":"Elementos","ic":"🌡️","itens":["Temperatura: calor ou frio do ar","Umidade: vapor de água no ar","Pressão atmosférica: peso do ar","Chuva (precipitação) e ventos"]},
+ {"titulo":"Fatores","ic":"🗺️","itens":["Latitude: mais longe do Equador, mais frio","Altitude: quanto mais alto, mais frio","Maritimidade e continentalidade","Correntes marítimas, relevo e vegetação"]},
+ {"titulo":"Tipos de chuva","ic":"🌧️","itens":["Convectiva: calor faz o ar subir (chuva de verão)","Orográfica: ar sobe ao encontrar um relevo","Frontal: encontro de massas de ar quente e fria"]},
+ {"titulo":"Massas de ar","ic":"💨","itens":["Grandes porções de ar com temperatura e umidade próprias","Levam suas características por onde passam"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":10,"titulo":"Zonas Climáticas e Domínios de Vegetação do Mundo","ic":"🌴🌲❄️","ramos":[
+ {"titulo":"Zonas térmicas","ic":"🌍","itens":["Zona tropical: entre os trópicos, quente","Zonas temperadas: estações bem definidas","Zonas polares: frio intenso o ano todo"]},
+ {"titulo":"Florestas","ic":"🌳","itens":["Equatoriais e tropicais: densas e com grande biodiversidade","Temperadas: árvores que perdem as folhas","Taiga (coníferas): pinheiros em áreas frias"]},
+ {"titulo":"Campos e savanas","ic":"🌾","itens":["Savanas: gramíneas e árvores esparsas (África, Cerrado)","Pradarias e estepes: campos em clima temperado"]},
+ {"titulo":"Desertos","ic":"🏜️","itens":["Chuva muito escassa","Plantas adaptadas, como os cactos","Exemplos: Saara e Atacama"]},
+ {"titulo":"Tundra e gelo","ic":"❄️","itens":["Tundra: musgos e liquens em solo congelado","Calotas polares: quase sem vegetação"]}
+]},
+{"disciplina":"Geografia","ano":"6º ano","num":11,"titulo":"Movimentos da Terra e as Estações do Ano","ic":"🌍☀️🌙","ramos":[
+ {"titulo":"Rotação","ic":"🔄","itens":["A Terra gira em torno de si mesma","Dura cerca de 24 horas","Causa o dia e a noite"]},
+ {"titulo":"Translação","ic":"☀️","itens":["A Terra gira ao redor do Sol","Dura cerca de 365 dias e 6 horas","A cada 4 anos: ano bissexto (29 de fevereiro)"]},
+ {"titulo":"Inclinação do eixo","ic":"📐","itens":["O eixo da Terra é inclinado (cerca de 23,5°)","Os hemisférios recebem luz de forma diferente","Junto com a translação, causa as estações"]},
+ {"titulo":"Estações do ano","ic":"🍂","itens":["Primavera, verão, outono e inverno","São opostas nos dois hemisférios","No Brasil: verão começa em dezembro"]},
+ {"titulo":"Solstícios e equinócios","ic":"⚖️","itens":["Solstício: dia mais longo ou noite mais longa do ano","Equinócio: dia e noite com a mesma duração"]}
+]}
+]
