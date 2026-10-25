@@ -1787,11 +1787,14 @@ MAPA_SYSTEM_PROMPT = (
     "- Cada ramo tem entre 2 e 4 itens.\n"
     "- Título do ramo: no máximo 35 caracteres, curto e direto.\n"
     "- Cada item: no máximo 90 caracteres. Quando fizer sentido, use o formato "
-    "\"Termo: definição curta\" (o termo antes dos dois-pontos fica em negrito).\n"
+    "\"Termo: definição curta\" (o termo antes dos dois-pontos já fica em negrito "
+    "automaticamente no desenho — por isso NUNCA escreva ** ou * ao redor de "
+    "palavras; use texto puro, sem nenhuma marcação markdown).\n"
     "- Linguagem adequada à idade do ano escolar informado (mais simples para "
     "anos iniciais, mais técnica para os finais), sempre com rigor de conteúdo "
     "e correção factual.\n"
-    "- Não inclua emojis, ícones nem qualquer campo além de \"titulo\" e \"ramos\".\n"
+    "- Não inclua emojis, ícones, asteriscos (*) nem qualquer campo além de "
+    "\"titulo\" e \"ramos\".\n"
     "- Não inclua texto fora do JSON.\n\n"
     "Exemplo (Geografia, 6º ano):\n" + json.dumps(_EXEMPLO_FICHA_GEOGRAFIA, ensure_ascii=False) + "\n\n"
     "Exemplo (História, 8º ano):\n" + json.dumps(_EXEMPLO_FICHA_HISTORIA, ensure_ascii=False)
@@ -1820,13 +1823,23 @@ def _normalizar_tema(s):
     return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
 
 
+def _sem_markdown(s):
+    """Tira **negrito**/*itálico* estilo markdown que a IA às vezes insere,
+    mesmo sendo instruída a não fazer isso — o desenho do mapa mental já
+    negrita sozinho o termo antes dos dois-pontos, então asteriscos nunca
+    deveriam sobrar no texto final."""
+    s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
+    s = re.sub(r"\*(.+?)\*", r"\1", s)
+    return s
+
+
 def validar_ficha_mapa(ficha):
     """Garante que a ficha (vinda da IA ou de uma edição do admin) respeita o
     formato fixo que o desenho no navegador espera. Levanta ValueError com uma
     mensagem explicável quando não respeita."""
     if not isinstance(ficha, dict):
         raise ValueError("Formato de ficha inválido.")
-    titulo = str(ficha.get("titulo", "")).strip()
+    titulo = _sem_markdown(str(ficha.get("titulo", "")).strip())
     ramos = ficha.get("ramos")
     if not titulo:
         raise ValueError("A ficha ficou sem título.")
@@ -1836,7 +1849,7 @@ def validar_ficha_mapa(ficha):
     for r in ramos:
         if not isinstance(r, dict):
             raise ValueError("Ramo em formato inválido.")
-        rtitulo = str(r.get("titulo", "")).strip()
+        rtitulo = _sem_markdown(str(r.get("titulo", "")).strip())
         itens = r.get("itens")
         if not rtitulo or len(rtitulo) > 60:
             raise ValueError("Título de ramo inválido ou muito longo.")
@@ -1844,7 +1857,7 @@ def validar_ficha_mapa(ficha):
             raise ValueError("Cada ramo precisa ter entre 2 e 4 itens.")
         itens_limpos = []
         for it in itens:
-            it = str(it).strip()
+            it = _sem_markdown(str(it).strip())
             if not it or len(it) > 140:
                 raise ValueError("Item vazio ou muito longo.")
             itens_limpos.append(it)
