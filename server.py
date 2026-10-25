@@ -1981,7 +1981,11 @@ async def criar_mapa(req: MapaRequest, request: Request):
         "ramos": ficha["ramos"],
         "autor": autor or None,
         "descritores": descritores or None,
-        "status": "pendente",
+        # Publica na hora (entra direto na biblioteca pública) em vez de
+        # esperar aprovação — menos trabalho pro admin, que ainda consegue
+        # excluir depois, na fila de revisão, se algum mapa sair errado.
+        "status": "aprovado",
+        "revisado": False,
         "oficial": False,
     })
     return JSONResponse({"mapa": entry, "cache": False})
@@ -2000,7 +2004,13 @@ def listar_mapas(disciplina: str | None = None, ano: str | None = None):
 
 @app.get("/api/admin/mapas-pendentes")
 def admin_mapas_pendentes(_: bool = Depends(require_admin)):
-    return JSONResponse([m for m in load_records("mapas_mentais") if m.get("status") == "pendente"])
+    # Mapas já publicados automaticamente mas ainda não revisados pelo admin,
+    # + eventuais mapas antigos que ainda estejam com status "pendente" (de
+    # antes desta mudança). Excluir aqui remove o mapa da biblioteca também.
+    return JSONResponse([
+        m for m in load_records("mapas_mentais")
+        if m.get("status") == "pendente" or m.get("revisado") is False
+    ])
 
 
 class MapaEdicaoRequest(BaseModel):
@@ -2022,7 +2032,10 @@ def admin_editar_mapa(mapa_id: str, req: MapaEdicaoRequest, _: bool = Depends(re
 
 @app.post("/api/admin/mapas/{mapa_id}/aprovar")
 def admin_aprovar_mapa(mapa_id: str, _: bool = Depends(require_admin)):
-    atualizado = update_record("mapas_mentais", mapa_id, {"status": "aprovado"})
+    # O mapa já está publicado desde a criação — isso só marca como revisado
+    # (some da fila do admin). "status": "aprovado" continua aqui por
+    # compatibilidade com mapas antigos que ainda estivessem "pendente".
+    atualizado = update_record("mapas_mentais", mapa_id, {"status": "aprovado", "revisado": True})
     if not atualizado:
         return JSONResponse({"error": "Mapa não encontrado (já pode ter sido revisado)."}, status_code=404)
     return JSONResponse({"ok": True})
