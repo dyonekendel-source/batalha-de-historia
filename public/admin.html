@@ -54,6 +54,7 @@
       <button class="admin-tab selected" data-tab="ia" onclick="selectTab('ia')">🤖 Perguntas à IA</button>
       <button class="admin-tab" data-tab="jogos" onclick="selectTab('jogos')">🎮 Jogos criados</button>
       <button class="admin-tab" data-tab="contrib" onclick="selectTab('contrib')">✍️ Perguntas de professores</button>
+      <button class="admin-tab" data-tab="mapas" onclick="selectTab('mapas')">🧠 Mapas mentais</button>
     </div>
 
     <section class="card" style="padding:24px">
@@ -62,11 +63,12 @@
   </section>
 
 </main>
+<script src="https://www.estudativa.com.br/js/mindmap-engine.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
-let cache = {ia: null, jogos: null, contrib: null};
+let cache = {ia: null, jogos: null, contrib: null, mapas: null};
 let activeTab = 'ia';
 
 async function checkLogin(){
@@ -115,12 +117,13 @@ async function logout(){
 }
 
 async function loadAll(){
-  const [ia, jogos, contrib] = await Promise.all([
+  const [ia, jogos, contrib, mapas] = await Promise.all([
     fetch('/api/admin/ia-perguntas').then(r => r.ok ? r.json() : []),
     fetch('/api/admin/jogos').then(r => r.ok ? r.json() : []),
     fetch('/api/admin/contribuicoes').then(r => r.ok ? r.json() : []),
+    fetch('/api/admin/mapas-pendentes').then(r => r.ok ? r.json() : []),
   ]);
-  cache = {ia, jogos, contrib};
+  cache = {ia, jogos, contrib, mapas};
   renderStats();
   renderTab();
 }
@@ -132,6 +135,7 @@ function renderStats(){
     <div class="stat-card"><div class="num">${cache.jogos.length}</div><div class="label">Jogos criados</div></div>
     <div class="stat-card"><div class="num">${cache.contrib.length}</div><div class="label">Lotes de perguntas de professores</div></div>
     <div class="stat-card"><div class="num">${totalPerguntasCriadas}</div><div class="label">Perguntas criadas (total)</div></div>
+    <div class="stat-card"><div class="num">${cache.mapas.length}</div><div class="label">Mapas mentais pendentes</div></div>
   `;
 }
 
@@ -177,7 +181,69 @@ function renderTab(){
         </div>
       </div>
     `).join('');
+  } else if (activeTab === 'mapas') {
+    if (!cache.mapas.length) { el.innerHTML = '<p class="muted">Nenhum mapa mental pendente.</p>'; return; }
+    el.innerHTML = cache.mapas.map(item => `
+      <div class="admin-item">
+        <div class="meta">${esc(item.criadoEm)}${item.autor ? ' · ' + esc(item.autor) : ' · gerado sem nome de autor'} · ${esc(item.disciplina)} · ${esc(item.ano)} · id ${esc(item.id)}</div>
+        <div class="pergunta">🧠 ${esc(item.titulo)} <small class="muted" style="font-weight:400">(tema: ${esc(item.tema)})</small></div>
+        <div id="mmPreview-${esc(item.id)}" style="max-width:420px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fbfaf6;margin:10px 0"></div>
+        <textarea id="mmEdit-${esc(item.id)}" class="hidden" style="width:100%;min-height:160px;font-family:monospace;font-size:12px">${esc(JSON.stringify({titulo:item.titulo, ramos:item.ramos}, null, 2))}</textarea>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn primary" onclick="aprovarMapa('${esc(item.id)}')">✅ Aprovar</button>
+          <button class="btn secondary" onclick="toggleEditarMapa('${esc(item.id)}')">✏️ Editar</button>
+          <button class="btn secondary" onclick="salvarEdicaoMapa('${esc(item.id)}')">💾 Salvar edição</button>
+          <button class="btn secondary" onclick="rejeitarMapa('${esc(item.id)}')">🗑 Excluir</button>
+        </div>
+      </div>
+    `).join('');
+    cache.mapas.forEach(item => {
+      const el2 = $(`mmPreview-${item.id}`);
+      if (el2 && window.MapaMental) {
+        MapaMental.render(el2, item, {disciplina: item.disciplina, ano: item.ano});
+      } else if (el2) {
+        el2.innerHTML = '<p class="muted" style="padding:10px">Pré-via indisponível (motor de desenho não carregou).</p>';
+      }
+    });
   }
+}
+
+function toggleEditarMapa(id){
+  $(`mmEdit-${id}`).classList.toggle('hidden');
+}
+
+async function salvarEdicaoMapa(id){
+  let payload;
+  try{ payload = JSON.parse($(`mmEdit-${id}`).value); }
+  catch(e){ alert('JSON inválido: ' + e.message); return; }
+  try{
+    const r = await fetch(`/api/admin/mapas/${encodeURIComponent(id)}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if(!r.ok){ alert(data.error || 'Não foi possível salvar.'); return; }
+    await loadAll();
+  }catch(e){ alert('Erro ao conectar com o servidor.'); }
+}
+
+async function aprovarMapa(id){
+  if(!confirm('Aprovar este mapa mental? Ele vai entrar na biblioteca pública.')) return;
+  try{
+    const r = await fetch(`/api/admin/mapas/${encodeURIComponent(id)}/aprovar`, {method:'POST'});
+    const data = await r.json();
+    if(!r.ok){ alert(data.error || 'Não foi possível aprovar.'); return; }
+    await loadAll();
+  }catch(e){ alert('Erro ao conectar com o servidor.'); }
+}
+
+async function rejeitarMapa(id){
+  if(!confirm('Excluir este mapa mental? Isso não pode ser desfeito.')) return;
+  try{
+    const r = await fetch(`/api/admin/mapas/${encodeURIComponent(id)}/rejeitar`, {method:'POST'});
+    const data = await r.json();
+    if(!r.ok){ alert(data.error || 'Não foi possível excluir.'); return; }
+    await loadAll();
+  }catch(e){ alert('Erro ao conectar com o servidor.'); }
 }
 
 function copiar(json){
