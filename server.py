@@ -1865,7 +1865,7 @@ def validar_ficha_mapa(ficha):
     return {"titulo": titulo, "ramos": limpos}
 
 
-async def gerar_mapa_com_ia(disciplina, ano, tema):
+async def gerar_mapa_com_ia(disciplina, ano, tema, descritores=None):
     key = get_groq_key()
     if not key:
         raise RuntimeError("groq_sem_chave")
@@ -1874,6 +1874,13 @@ async def gerar_mapa_com_ia(disciplina, ano, tema):
         f"{disciplina}, no {ano} do Ensino Fundamental brasileiro, seguindo "
         "rigorosamente o formato, o tamanho e a BNCC."
     )
+    if descritores:
+        user_msg += (
+            "\n\nA pessoa que pediu o mapa quer que estes tópicos/subtópicos/assuntos "
+            "apareçam, na medida do possível, distribuídos entre os ramos (use-os para "
+            "guiar o conteúdo, mas sem perder a coerência pedagógica nem fugir das regras "
+            f"de formato): {descritores}"
+        )
     import httpx
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
@@ -1903,6 +1910,7 @@ class MapaRequest(BaseModel):
     ano: str
     tema: str
     autor: str | None = None
+    descritores: str | None = None
 
 
 @app.post("/api/mapa")
@@ -1911,6 +1919,7 @@ async def criar_mapa(req: MapaRequest, request: Request):
     ano = req.ano.strip()
     tema = req.tema.strip()
     autor = (req.autor or "").strip()[:60]
+    descritores = (req.descritores or "").strip()[:600]
 
     if disciplina not in DISCIPLINAS:
         return JSONResponse({"error": "Disciplina inválida."}, status_code=400)
@@ -1929,16 +1938,19 @@ async def criar_mapa(req: MapaRequest, request: Request):
     tema_norm = _normalizar_tema(tema)
 
     # Cache: se já existir um mapa APROVADO com a mesma disciplina+ano+tema
-    # normalizado, devolve ele direto, sem gastar uma chamada à IA.
-    existentes = load_records("mapas_mentais")
-    cacheado = next(
-        (m for m in existentes if m.get("status") == "aprovado"
-         and m.get("disciplina") == disciplina and m.get("ano") == ano
-         and m.get("temaNormalizado") == tema_norm),
-        None,
-    )
-    if cacheado:
-        return JSONResponse({"mapa": cacheado, "cache": True})
+    # normalizado, devolve ele direto, sem gastar uma chamada à IA. Isso só
+    # vale quando a pessoa NÃO pediu tópicos específicos — se ela listou
+    # descritores, ela quer um mapa direcionado, então sempre gera na hora.
+    if not descritores:
+        existentes = load_records("mapas_mentais")
+        cacheado = next(
+            (m for m in existentes if m.get("status") == "aprovado"
+             and m.get("disciplina") == disciplina and m.get("ano") == ano
+             and m.get("temaNormalizado") == tema_norm),
+            None,
+        )
+        if cacheado:
+            return JSONResponse({"mapa": cacheado, "cache": True})
 
     key = get_groq_key()
     if not key:
@@ -1950,7 +1962,7 @@ async def criar_mapa(req: MapaRequest, request: Request):
     ficha = None
     for tentativa in range(2):  # 1 tentativa + 1 nova tentativa se vier inválida
         try:
-            ficha = await gerar_mapa_com_ia(disciplina, ano, tema)
+            ficha = await gerar_mapa_com_ia(disciplina, ano, tema, descritores)
             break
         except Exception as e:
             print(f"Mapa mental: tentativa {tentativa + 1} falhou:", repr(e))
@@ -1968,6 +1980,7 @@ async def criar_mapa(req: MapaRequest, request: Request):
         "titulo": ficha["titulo"],
         "ramos": ficha["ramos"],
         "autor": autor or None,
+        "descritores": descritores or None,
         "status": "pendente",
         "oficial": False,
     })
