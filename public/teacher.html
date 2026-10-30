@@ -349,7 +349,8 @@ const DISC_META={
 const DISC_ORDER=['historia','portugues','matematica','geografia','ciencias','quimica','fisica','biologia','filosofia','sociologia','outros'];
 
 function labelForGroup(disciplina,topic){
-  if(disciplina==='historia') return topic.category==='brazil' ? 'HISTÓRIA DO BRASIL' : 'HISTÓRIA GERAL';
+  if(disciplina==='historia' && String(topic.category||'').startsWith('facil:')) return 'FÁCIL · '+topic.category.slice(6).toUpperCase();
+  if(disciplina==='historia') return topic.category==='brazil' ? 'DIFÍCIL · HISTÓRIA DO BRASIL' : 'DIFÍCIL · HISTÓRIA GERAL';
   return topic.grade ? `${topic.grade}º ANO` : 'GERAL';
 }
 function updateTopicHint(topics){const cur=topics.find(t=>String(t.id)===String(selectedTopicId));if(cur)$('topicHint').textContent=cur.question_count>=10?`${cur.question_count} questões válidas disponíveis neste tema. A partida sorteará 10.`:`Este tema tem ${cur.question_count} questões válidas e não pode iniciar uma partida ainda.`;}
