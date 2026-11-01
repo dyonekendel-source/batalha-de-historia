@@ -2454,3 +2454,47 @@ async def ws_endpoint(ws: WebSocket):
             await broadcast(room)
         elif role == "teacher" and room and room.get("id") in rooms:
             room["teacher"] = None
+
+
+# ---------------------------------------------------------------------------
+# Vídeos do canal "Um Maluco na História" (aba /videos/ do site principal).
+# Lê o feed RSS público do YouTube, guarda em memória por 15 min e devolve
+# JSON simples. Se o YouTube falhar, devolve o último resultado bom (se houver).
+# ---------------------------------------------------------------------------
+import urllib.request
+import xml.etree.ElementTree as _ET
+
+YT_CHANNEL_ID = "UCehYtLLk-rzM7R4VzJiNU5g"
+_YT_CACHE = {"t": 0, "videos": []}
+
+
+def _fetch_youtube_videos():
+    url = f"https://www.youtube.com/feeds/videos.xml?channel_id={YT_CHANNEL_ID}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Estudativa)"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        root = _ET.fromstring(r.read())
+    ns = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
+    out = []
+    for e in root.findall("a:entry", ns):
+        vid = e.findtext("yt:videoId", default="", namespaces=ns)
+        if not vid:
+            continue
+        out.append({
+            "id": vid,
+            "title": e.findtext("a:title", default="", namespaces=ns),
+            "published": e.findtext("a:published", default="", namespaces=ns),
+        })
+    return out
+
+
+@app.get("/api/videos")
+def api_videos():
+    if time.time() - _YT_CACHE["t"] > 900 or not _YT_CACHE["videos"]:
+        try:
+            _YT_CACHE["videos"] = _fetch_youtube_videos()
+            _YT_CACHE["t"] = time.time()
+        except Exception:
+            if not _YT_CACHE["videos"]:
+                raise HTTPException(status_code=502, detail="Não foi possível ler o canal agora.")
+    return JSONResponse({"channelId": YT_CHANNEL_ID, "videos": _YT_CACHE["videos"]},
+                        headers={"Cache-Control": "public, max-age=300"})
