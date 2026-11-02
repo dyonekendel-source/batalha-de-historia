@@ -2458,33 +2458,69 @@ async def ws_endpoint(ws: WebSocket):
 
 # ---------------------------------------------------------------------------
 # Vídeos do canal "Um Maluco na História" (aba /videos/ do site principal).
-# Lê o feed RSS público do YouTube, guarda em memória por 15 min e devolve
-# JSON simples. Se o YouTube falhar, devolve o último resultado bom (se houver).
+# Fontes, nesta ordem: (1) API oficial do YouTube, se a variável de ambiente
+# YT_API_KEY existir no Render; (2) feed RSS do canal; (3) feed RSS da playlist
+# de envios. O RSS do YouTube às vezes responde 404 por um tempo, por isso a
+# chave da API é o caminho confiável. Resultado fica em memória por 15 min e,
+# se tudo falhar, devolve o último resultado bom (se houver).
 # ---------------------------------------------------------------------------
 import urllib.request
 import xml.etree.ElementTree as _ET
 
 YT_CHANNEL_ID = "UCehYtLLk-rzM7R4VzJiNU5g"
+YT_UPLOADS_ID = "UU" + YT_CHANNEL_ID[2:]
 _YT_CACHE = {"t": 0, "videos": []}
 
 
-def _fetch_youtube_videos():
-    url = f"https://www.youtube.com/feeds/videos.xml?channel_id={YT_CHANNEL_ID}"
+def _yt_get(url):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Estudativa)"})
-    with urllib.request.urlopen(req, timeout=10) as r:
-        root = _ET.fromstring(r.read())
+    with urllib.request.urlopen(req, timeout=8) as r:
+        return r.read()
+
+
+def _yt_via_api(key):
+    url = ("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=15"
+           f"&playlistId={YT_UPLOADS_ID}&key={key}")
+    data = json.loads(_yt_get(url).decode("utf-8"))
+    out = []
+    for it in data.get("items", []):
+        sn = it.get("snippet", {})
+        vid = (sn.get("resourceId") or {}).get("videoId")
+        if vid and sn.get("title") not in ("Private video", "Deleted video"):
+            out.append({"id": vid, "title": sn.get("title", ""), "published": sn.get("publishedAt", "")})
+    return out
+
+
+def _yt_via_rss(url):
+    root = _ET.fromstring(_yt_get(url))
     ns = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
     out = []
     for e in root.findall("a:entry", ns):
         vid = e.findtext("yt:videoId", default="", namespaces=ns)
-        if not vid:
-            continue
-        out.append({
-            "id": vid,
-            "title": e.findtext("a:title", default="", namespaces=ns),
-            "published": e.findtext("a:published", default="", namespaces=ns),
-        })
+        if vid:
+            out.append({
+                "id": vid,
+                "title": e.findtext("a:title", default="", namespaces=ns),
+                "published": e.findtext("a:published", default="", namespaces=ns),
+            })
     return out
+
+
+def _fetch_youtube_videos():
+    tentativas = []
+    key = os.environ.get("YT_API_KEY", "").strip()
+    if key:
+        tentativas.append(lambda: _yt_via_api(key))
+    tentativas.append(lambda: _yt_via_rss(f"https://www.youtube.com/feeds/videos.xml?channel_id={YT_CHANNEL_ID}"))
+    tentativas.append(lambda: _yt_via_rss(f"https://www.youtube.com/feeds/videos.xml?playlist_id={YT_UPLOADS_ID}"))
+    for t in tentativas:
+        try:
+            v = t()
+            if v:
+                return v
+        except Exception:
+            continue
+    raise RuntimeError("nenhuma fonte de vídeos respondeu")
 
 
 @app.get("/api/videos")
