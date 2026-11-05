@@ -33,6 +33,7 @@ portas de e-mail (SMTP). O Resend envia por HTTPS, que funciona normalmente.
 
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import os
@@ -199,13 +200,136 @@ def coletar_dados(load_records, topics, dias: int = 7) -> dict:
         "temas_desempenho": temas_desempenho[:10],
         "temas_faceis": temas_faceis[:5],
         "questoes_dificeis": questoes_dificeis,
-        "perguntas_ia": [str(i.get("pergunta", ""))[:220] for i in ia[:80]],
+        "perguntas_ia": [str(i.get("pergunta", ""))[:150] for i in ia[:50]],
         "lacunas": {
             "sem_questoes_suficientes": sem_questoes[:10],
             "poucas_questoes": sorted(poucas_questoes, key=lambda x: x["questoes"])[:10],
             "historia_sem_partidas_30d": nunca_jogados_historia[:12],
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# 1b. Tendências do Google
+# ---------------------------------------------------------------------------
+# O Google não tem uma API oficial e gratuita do Google Trends, então o robô
+# usa duas fontes públicas, sem chave:
+#   - "Em alta" do Google Trends no Brasil (feed RSS diário): o que o país
+#     inteiro está buscando agora. A IA procura ganchos com História ali
+#     (aniversários de eventos, descobertas arqueológicas, filmes, notícias).
+#   - Sugestões de busca do Google (o autocompletar): para cada tema do site,
+#     as buscas que as pessoas mais fazem ("revolução francesa resumo",
+#     "o que foi o absolutismo"...). Mostra o que tem procura e com quais
+#     palavras — ótimo para títulos de vídeos, mapas mentais e quizzes.
+# Se o Google bloquear ou demorar, o relatório sai normalmente sem essa parte.
+
+TRENDS_RSS = "https://trends.google.com/trending/rss?geo=BR"
+AUTOCOMPLETE = "https://suggestqueries.google.com/complete/search"
+BUSCAS_GERAIS = ["o que foi a", "o que foi o", "quem foi", "resumo de história", "história enem"]
+NAVEGADOR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
+
+
+def _ler_rss_trends(xml_texto: str, limite: int = 20) -> list[dict]:
+    import xml.etree.ElementTree as ET
+
+    raiz = ET.fromstring(xml_texto)
+    itens = []
+    for item in raiz.iter("item"):
+        termo = (item.findtext("title") or "").strip()
+        if not termo:
+            continue
+        trafego = ""
+        noticias = []
+        for filho in item:
+            tag = filho.tag.split("}")[-1]  # ignora o namespace "ht:"
+            if tag == "approx_traffic":
+                trafego = (filho.text or "").strip()
+            elif tag == "news_item":
+                for n in filho:
+                    if n.tag.split("}")[-1] == "news_item_title" and n.text:
+                        noticias.append(html.unescape(n.text.strip())[:140])
+        itens.append({"termo": termo, "buscas": trafego, "noticias": noticias[:2]})
+        if len(itens) >= limite:
+            break
+    return itens
+
+
+def _ler_autocomplete(conteudo: bytes) -> list[str]:
+    for codificacao in ("utf-8", "latin-1"):
+        try:
+            dados = json.loads(conteudo.decode(codificacao))
+            return [str(s) for s in dados[1]][:8]
+        except Exception:
+            continue
+    return []
+
+
+def _termo_de_busca(nome: str) -> str:
+    """Transforma o nome do tema no que uma pessoa digitaria no Google:
+    'Era Napoleônica e Congresso de Viena' -> 'era napoleônica';
+    'Revoluções Liberais (1820-1848)' -> 'revoluções liberais'."""
+    n = re.sub(r"\(.*?\)", "", nome).split(":")[0]
+    n = re.sub(r"\s+", " ", n).strip().lower()
+    parte = re.split(r"\s+e\s+(?:a\s+|o\s+|da\s+|do\s+)?", n, maxsplit=1)[0]
+    # Só encurta se a primeira parte ainda fizer sentido sozinha
+    # ('história e memória' fica inteiro; 'hebreus, fenícios e persas' também).
+    if "," in parte or len(parte.split()) < 2:
+        return n
+    return parte
+
+
+def _temas_da_semana(topics, por_semana: int = 12) -> list[str]:
+    """Escolhe até 12 temas de História por semana, em rodízio, para não
+    fazer buscas demais de uma vez. Em poucas semanas todos são pesquisados."""
+    nomes = list(dict.fromkeys(t.get("name") for t in topics if t.get("disciplina") == "historia" and t.get("name")))
+    if len(nomes) <= por_semana:
+        return nomes
+    semana = int(time.time() // (7 * 86400))
+    inicio = (semana * por_semana) % len(nomes)
+    return (nomes + nomes)[inicio:inicio + por_semana]
+
+
+async def buscar_tendencias(topics) -> dict:
+    resultado = {"em_alta_brasil": [], "buscas_google": [], "erros": []}
+    async with httpx.AsyncClient(timeout=15, headers=NAVEGADOR, follow_redirects=True) as client:
+        try:
+            r = await client.get(TRENDS_RSS)
+            if r.status_code == 200:
+                resultado["em_alta_brasil"] = _ler_rss_trends(r.text)
+            else:
+                resultado["erros"].append(f"Google Trends respondeu {r.status_code}")
+        except Exception as e:
+            resultado["erros"].append(f"Google Trends: {e!r}"[:160])
+
+        consultas = []
+        for nome in _temas_da_semana(topics):
+            n = _termo_de_busca(nome)
+            consultas += [(nome, n), (nome, f"{n} resumo")]
+        consultas += [("geral", q) for q in BUSCAS_GERAIS]
+
+        vistos = set()
+        por_tema: dict[str, list[str]] = defaultdict(list)
+        falhas = 0
+        for tema, consulta in consultas:
+            if falhas >= 3:  # o Google começou a bloquear: para por aqui
+                resultado["erros"].append("Sugestões de busca do Google interrompidas (muitas recusas).")
+                break
+            try:
+                r = await client.get(AUTOCOMPLETE, params={"client": "firefox", "hl": "pt-BR", "gl": "br", "ie": "utf-8", "oe": "utf-8", "q": consulta})
+                if r.status_code != 200:
+                    falhas += 1
+                    continue
+                for s in _ler_autocomplete(r.content):
+                    s = s.strip().lower()
+                    if s and s != consulta and s not in vistos:
+                        vistos.add(s)
+                        por_tema[tema].append(s)
+            except Exception:
+                falhas += 1
+            await asyncio.sleep(0.4)  # educado com o Google
+
+        resultado["buscas_google"] = [{"tema": t, "buscas": b[:10]} for t, b in por_tema.items() if b]
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -219,25 +343,53 @@ PROMPT_SISTEMA = (
     "nos números. Seja concreto e prático; escreva em português do Brasil, em tom direto e "
     "amigável. Nunca invente números: use só os dados recebidos. Se houver poucos dados, "
     "diga isso no resumo e apoie-se nas lacunas do banco de questões e nas perguntas à IA.\n\n"
+    "Você também recebe TENDÊNCIAS DO GOOGLE:\n"
+    "- em_alta_brasil: o que o Brasil inteiro está buscando agora (Google Trends). Quase tudo "
+    "ali é futebol, celebridades e notícias sem relação com a escola: IGNORE o que não tiver "
+    "ligação real com História. Só aponte um gancho quando a ligação for verdadeira e fácil de "
+    "explicar (ex.: aniversário de um evento histórico, descoberta arqueológica, filme ou série "
+    "de época, notícia de um país que permite explicar sua história). É melhor nenhum gancho do "
+    "que um gancho forçado.\n"
+    "- buscas_google: sugestões de busca do Google para os temas do site — mostram o que as "
+    "pessoas realmente procuram e com quais palavras. Use para propor títulos e conteúdos que "
+    "respondam a essas buscas.\n"
+    "Inclua pelo menos 1 sugestão apoiada nas tendências do Google (marque origem \"google\"), "
+    "se houver dados de tendências.\n\n"
     "Responda SOMENTE com um JSON neste formato:\n"
     "{\n"
     '  "resumo": "2 ou 3 frases sobre a semana",\n'
     '  "temas_ia": [{"tema": "assunto que os alunos perguntaram à IA", "vezes": 3}],\n'
+    '  "ganchos_google": [{"tendencia": "termo em alta", "conexao": "como ligar a um conteúdo de História"}],\n'
+    '  "buscas_destaque": ["até 6 buscas do Google que merecem um conteúdo no site"],\n'
     '  "sugestoes": [\n'
     "    {\n"
     '      "tipo": "quiz | mapa mental | vídeo curto | jogo | resumo ativo | revisão",\n'
     '      "titulo": "título curto do conteúdo sugerido",\n'
     '      "tema": "tema relacionado",\n'
     '      "prioridade": "alta | média | baixa",\n'
+    '      "origem": "dados do site | google",\n'
     '      "motivo": "por que, citando o dado",\n'
     '      "ideia": "como seria o conteúdo, em 1 ou 2 frases"\n'
     "    }\n"
     "  ]\n"
     "}\n"
-    "Dê de 3 a 5 sugestões, da mais importante para a menos importante. Em temas_ia, agrupe "
+    "Dê de 3 a 6 sugestões, da mais importante para a menos importante. Em temas_ia, agrupe "
     "as perguntas dos alunos por assunto (no máximo 6 assuntos); deixe a lista vazia se não "
-    "houver perguntas."
+    "houver perguntas. ganchos_google pode ficar vazio (no máximo 3)."
 )
+
+
+def _dados_para_ia(dados: dict) -> dict:
+    """Versão enxuta dos dados para caber no limite gratuito da Groq."""
+    d = json.loads(json.dumps(dados, ensure_ascii=False))
+    for q in d.get("questoes_dificeis", []):
+        q["pergunta"] = q["pergunta"][:160]
+        q["resposta_correta"] = q["resposta_correta"][:100]
+    tend = d.get("tendencias") or {}
+    tend.pop("erros", None)
+    for t in tend.get("buscas_google", []):
+        t["buscas"] = t["buscas"][:6]
+    return d
 
 
 async def sugerir_com_ia(dados: dict, groq_key: str | None, groq_model: str) -> dict | None:
@@ -254,7 +406,7 @@ async def sugerir_com_ia(dados: dict, groq_key: str | None, groq_model: str) -> 
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {"role": "system", "content": PROMPT_SISTEMA},
-                        {"role": "user", "content": "Dados da semana:\n" + json.dumps(dados, ensure_ascii=False)},
+                        {"role": "user", "content": "Dados da semana:\n" + json.dumps(_dados_para_ia(dados), ensure_ascii=False)},
                     ],
                 },
             )
@@ -269,7 +421,9 @@ async def sugerir_com_ia(dados: dict, groq_key: str | None, groq_model: str) -> 
         return {
             "resumo": str(saida.get("resumo") or "").strip(),
             "temas_ia": [t for t in saida.get("temas_ia") or [] if isinstance(t, dict) and t.get("tema")][:6],
-            "sugestoes": sugestoes[:5],
+            "ganchos_google": [g for g in saida.get("ganchos_google") or [] if isinstance(g, dict) and g.get("tendencia")][:3],
+            "buscas_destaque": [str(b) for b in saida.get("buscas_destaque") or [] if b][:6],
+            "sugestoes": sugestoes[:6],
             "fonte": "ia",
         }
     except Exception as e:
@@ -324,6 +478,22 @@ def sugerir_por_regras(dados: dict) -> dict:
             "motivo": "Ninguém jogou esse tema nos últimos 30 dias.",
             "ideia": "Um vídeo curto apresentando o tema, com link para o quiz no site.",
         })
+    # Sem IA não dá pra julgar quais "em alta" têm ligação com História, então
+    # o plano B usa só as sugestões de busca dos temas do site.
+    buscas_destaque = []
+    for t in (dados.get("tendencias") or {}).get("buscas_google", []):
+        if t["tema"] != "geral" and t["buscas"]:
+            buscas_destaque.append(t["buscas"][0])
+    if buscas_destaque:
+        s.append({
+            "tipo": "resumo ativo",
+            "titulo": f"Responder à busca: “{buscas_destaque[0]}”",
+            "tema": buscas_destaque[0],
+            "prioridade": "média",
+            "origem": "google",
+            "motivo": "É uma das buscas que o Google mais sugere para os temas do site.",
+            "ideia": "Um resumo ou mapa mental com esse título exato, para aparecer em quem pesquisa isso.",
+        })
     n = dados["numeros"]
     if n["partidas"] == 0:
         resumo = "Nenhuma partida foi registrada nesta semana, então as sugestões se apoiam nas lacunas do banco de questões."
@@ -332,7 +502,7 @@ def sugerir_por_regras(dados: dict) -> dict:
         if n["acerto_medio_pct"] is not None:
             resumo += f", com acerto médio de {n['acerto_medio_pct']}%"
         resumo += "."
-    return {"resumo": resumo, "temas_ia": [], "sugestoes": s[:5], "fonte": "regras"}
+    return {"resumo": resumo, "temas_ia": [], "ganchos_google": [], "buscas_destaque": buscas_destaque[:6], "sugestoes": s[:6], "fonte": "regras"}
 
 
 # ---------------------------------------------------------------------------
@@ -371,9 +541,17 @@ def texto_telegram(rel: dict) -> str:
     linhas += ["", "💡 <b>Sugestões</b>"]
     for i, s in enumerate(rel.get("sugestoes") or [], 1):
         prio = " 🔥" if str(s.get("prioridade", "")).lower() == "alta" else ""
-        linhas.append(f"{i}. {_emoji(s.get('tipo'))} <b>{e(s.get('titulo', ''))}</b>{prio}")
+        google = " 🔎" if str(s.get("origem", "")).lower() == "google" else ""
+        linhas.append(f"{i}. {_emoji(s.get('tipo'))} <b>{e(s.get('titulo', ''))}</b>{prio}{google}")
         if s.get("motivo"):
             linhas.append(f"   ↳ {e(s['motivo'])}")
+
+    if rel.get("ganchos_google") or rel.get("buscas_destaque"):
+        linhas += ["", "🔎 <b>Em alta no Google</b>"]
+        for g in rel.get("ganchos_google") or []:
+            linhas.append(f"• <b>{e(g.get('tendencia', ''))}</b> → {e(g.get('conexao', ''))}")
+        if rel.get("buscas_destaque"):
+            linhas.append("Buscas que merecem conteúdo: " + ", ".join(f"“{e(b)}”" for b in rel["buscas_destaque"][:5]))
 
     pend = []
     if n["mapas_pendentes"]:
@@ -422,7 +600,9 @@ def html_email(rel: dict) -> str:
             '<div style="border:1px solid #e3e8ef;border-radius:12px;padding:14px 16px;margin:10px 0">'
             f'<div style="font-size:16px;font-weight:700">{i}. {_emoji(s.get("tipo"))} {e(s.get("titulo", ""))}</div>'
             f'<div style="font-size:12px;color:#5b6675;margin:4px 0 8px">{e(s.get("tipo", ""))} · {e(s.get("tema", ""))} · '
-            f'<b style="color:{cor_prio}">prioridade {e(prio or "—")}</b></div>'
+            f'<b style="color:{cor_prio}">prioridade {e(prio or "—")}</b>'
+            + (" · 🔎 tendência do Google" if str(s.get("origem", "")).lower() == "google" else "")
+            + "</div>"
             f'<div style="font-size:14px"><b>Por quê:</b> {e(s.get("motivo", ""))}</div>'
             f'<div style="font-size:14px;margin-top:4px"><b>Ideia:</b> {e(s.get("ideia", ""))}</div>'
             "</div>"
@@ -446,6 +626,22 @@ def html_email(rel: dict) -> str:
     if rel.get("temas_ia"):
         itens = "".join(f"<li>{e(t['tema'])} ({e(str(t.get('vezes', '')))}x)</li>" for t in rel["temas_ia"])
         ia_html = f'<h3 style="margin:24px 0 6px">🤖 O que os alunos perguntaram à IA</h3><ul style="font-size:14px">{itens}</ul>'
+
+    google_html = ""
+    if rel.get("ganchos_google") or rel.get("buscas_destaque"):
+        ganchos = "".join(
+            f"<li><b>{e(g.get('tendencia', ''))}</b> → {e(g.get('conexao', ''))}</li>"
+            for g in rel.get("ganchos_google") or []
+        )
+        buscas = "".join(
+            f'<span style="display:inline-block;background:#eef4ff;border-radius:999px;padding:4px 10px;margin:3px 4px 3px 0;font-size:13px">{e(b)}</span>'
+            for b in rel.get("buscas_destaque") or []
+        )
+        google_html = (
+            '<h3 style="margin:24px 0 6px">🔎 Em alta no Google</h3>'
+            + (f'<ul style="font-size:14px">{ganchos}</ul>' if ganchos else "")
+            + (f'<div style="font-size:13px;color:#5b6675;margin:6px 0 4px">Buscas que merecem um conteúdo no site:</div><div>{buscas}</div>' if buscas else "")
+        )
 
     jog_html = ""
     if rel.get("temas_mais_jogados"):
@@ -480,7 +676,7 @@ def html_email(rel: dict) -> str:
         f'<p style="font-size:15px">{e(rel.get("resumo") or "")}</p>'
         f"{cards}"
         '<h3 style="margin:24px 0 6px">💡 Sugestões de conteúdo</h3>'
-        f"{sug_html}{dif_html}{ia_html}{jog_html}{pend_html}{botao}"
+        f"{sug_html}{google_html}{dif_html}{ia_html}{jog_html}{pend_html}{botao}"
         f'<p style="color:#8a94a3;font-size:12px;margin-top:28px">{fonte} O robô só sugere — nada foi publicado no site.</p>'
         "</div>"
     )
@@ -555,6 +751,10 @@ async def descobrir_chats_telegram() -> dict:
 # ---------------------------------------------------------------------------
 async def gerar_relatorio(*, load_records, topics, groq_key, groq_model, painel_url="", dias=7) -> dict:
     dados = coletar_dados(load_records, topics, dias)
+    try:
+        dados["tendencias"] = await buscar_tendencias(topics)
+    except Exception as e:
+        dados["tendencias"] = {"em_alta_brasil": [], "buscas_google": [], "erros": [f"Tendências: {e!r}"[:160]]}
     # A IA recebe os dados sem a lista completa de perguntas de alunos repetida
     # no relatório salvo — ela só volta agrupada por assunto (temas_ia).
     sugestoes = await sugerir_com_ia(dados, groq_key, groq_model) or sugerir_por_regras(dados)
