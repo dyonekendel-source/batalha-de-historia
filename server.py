@@ -1532,7 +1532,8 @@ TUTOR_SYSTEM_PROMPT = (
     "com: 'Isso foge do meu propósito aqui — eu ajudo só com conteúdo escolar e "
     "acadêmico. Quer que eu te ajude com alguma matéria ou tema de estudo?':\n"
     "- Qualquer assunto que não seja escolar/educacional (fofoca, política atual, "
-    "esportes, celebridades, jogos, relacionamentos pessoais, etc.).\n"
+    "esportes, celebridades, jogos de entretenimento, relacionamentos pessoais, etc.). "
+    "Mas pedidos para APRENDER ou REVISAR de forma divertida/com jogos são escolares e devem ser atendidos (veja RECURSOS DA ESTUDATIVA).\n"
     "- Conteúdo sexual, romântico ou violento explícito, mesmo 'em forma de história'.\n"
     "- Drogas, álcool, armas, instruções perigosas ou ilegais.\n"
     "- Discurso de ódio, preconceito ou discriminação de qualquer tipo.\n"
@@ -1558,6 +1559,25 @@ TUTOR_SYSTEM_PROMPT = (
     "- Evite opiniões pessoais sobre temas controversos (política, religião); apresente "
     "fatos e, quando o tema for legitimamente controverso, diferentes perspectivas "
     "de forma equilibrada, como um material didático faria.\n\n"
+    "RECURSOS DA ESTUDATIVA — PRIORIDADE MÁXIMA: sempre que o aluno ou professor pedir "
+    "para aprender de forma divertida, jogar, revisar com quiz, fazer mapa mental, ver "
+    "resumos, vídeos ou notícias, indique PRIMEIRO os recursos do próprio site, com link "
+    "em Markdown, e só depois (se fizer sentido) cite algo externo. NUNCA recomende "
+    "Kahoot, Quizizz, Wordwall, Bingo online de terceiros, Canva, Mindmeister, "
+    "Miro, Genially, Educaplay ou outros sites/apps de fora como primeira opção; a "
+    "Estudativa já tem equivalentes gratuitos. Se o aluno citar um desses sites, diga "
+    "que a Estudativa tem algo parecido e indique o link daqui. Links oficiais (use "
+    "exatamente estes):\n"
+    "- Jogos educativos (bingo, show do milhão, escape room, forca, tabuleiros, roleta, "
+    "sudoku, dados e salas ao vivo para professores): [Jogos da Estudativa](https://www.estudativa.com.br/salas/)\n"
+    "- Quiz e revisão em formato de jogo: [Revise Jogando](https://www.estudativa.com.br/revisao/)\n"
+    "- Mapas mentais prontos (História, Geografia e outros): [Mapas Mentais](https://www.estudativa.com.br/mapas-mentais/); "
+    "para criar o seu próprio: [Criar meu mapa mental](https://www.estudativa.com.br/mapas-mentais/criar/)\n"
+    "- Resumos com perguntas rápidas por tema: [Resumos Ativos](https://www.estudativa.com.br/conhecimento/)\n"
+    "- Vídeos: [Vídeos](https://www.estudativa.com.br/videos/); notícias e dicas de estudo, "
+    "como para o Enem: [Notícias](https://www.estudativa.com.br/noticias/)\n"
+    "Só use esses links quando forem relevantes ao pedido; nunca invente outros endereços "
+    "da Estudativa além dos listados.\n\n"
     "No conteúdo permitido: explique o raciocínio passo a passo (não só a resposta "
     "final), use linguagem simples, clara e adequada à idade, mantendo um tom sério e "
     "didático (não é um chatbot de entretenimento). Quando fizer sentido, sugira os "
@@ -1569,6 +1589,23 @@ TUTOR_SYSTEM_PROMPT = (
     "própria, não repita esse dado nem peça mais detalhes — apenas continue ajudando "
     "normalmente com o conteúdo escolar."
 )
+
+
+RECURSOS_DICAS = [
+    (re.compile(r"\b(jog|brincar|brincadeira|diversao|divertid|kahoot|quizizz|wordwall|bingo|gamific|show do milhao|escape room|forca)"),
+     "O usuário quer aprender/revisar de forma divertida ou citou um jogo/site de fora. Indique PRIMEIRO os jogos da própria Estudativa: [Jogos da Estudativa](https://www.estudativa.com.br/salas/) e, para quiz em formato de jogo, [Revise Jogando](https://www.estudativa.com.br/revisao/). Não recomende Kahoot, Quizizz, Wordwall ou similares como primeira opção."),
+    (re.compile(r"\b(mapa mental|mapas mentais|mapa conceitual|mindmap|mind map|mindmeister|esquema visual)"),
+     "O usuário quer mapa mental. Indique PRIMEIRO os mapas mentais da Estudativa: [Mapas Mentais](https://www.estudativa.com.br/mapas-mentais/) (prontos) e [Criar meu mapa mental](https://www.estudativa.com.br/mapas-mentais/criar/) (para gerar o seu). Não recomende ferramentas externas como primeira opção."),
+    (re.compile(r"\b(resumo|resumos|revisar|revisao|resumir)"),
+     "Se couber, indique também os [Resumos Ativos](https://www.estudativa.com.br/conhecimento/) da Estudativa."),
+    (re.compile(r"\b(video|videos|videoaula)"),
+     "Se couber, indique os [Vídeos](https://www.estudativa.com.br/videos/) da Estudativa."),
+]
+
+
+def resource_hints(message):
+    q = _sem_acento(message.lower())
+    return [h for rx, h in RECURSOS_DICAS if rx.search(q)]
 
 
 def _score_kb_entry(entry, terms):
@@ -1683,6 +1720,10 @@ async def tutor(req: TutorRequest):
             "role": "system",
             "content": "REFERÊNCIA VERIFICADA DA ESTUDATIVA (conteúdo oficial do site, alinhado à BNCC — baseie sua resposta nisto quando for pertinente à pergunta do aluno):\n\n" + ref_text,
         })
+
+    hints = resource_hints(message)
+    if hints:
+        messages.append({"role": "system", "content": "INSTRUÇÃO PARA ESTA RESPOSTA: " + " ".join(hints)})
 
     messages += [*history, {"role": "user", "content": message}]
 
