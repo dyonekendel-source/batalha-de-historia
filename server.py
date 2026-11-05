@@ -2164,7 +2164,50 @@ async def finish_question(room):
             p["score"] += 1000
         p["answered"] = False
 
+    # Robô Curador: guarda (em memória, até o fim da partida) quantos alunos
+    # responderam e acertaram esta questão. Totalmente anônimo — sem nomes.
+    registrar_desempenho_questao(room, question)
+
     await broadcast(room)
+
+
+def registrar_desempenho_questao(room, question):
+    try:
+        jogadores = len(room["players"])
+        responderam = sum(1 for p in room["players"].values() if p["last_answered"])
+        acertaram = sum(1 for p in room["players"].values() if p["last_correct"])
+        room.setdefault("desempenho", []).append({
+            "questao_id": question.get("id", ""),
+            "pergunta": str(question.get("question", ""))[:300],
+            "resposta_correta": str(question.get("correct_answer", ""))[:200],
+            "jogadores": jogadores,
+            "responderam": responderam,
+            "acertaram": acertaram,
+        })
+    except Exception as e:
+        print("Robô Curador: não consegui anotar o desempenho da questão:", repr(e))
+
+
+def salvar_resultado_partida(room):
+    """Grava UM registro por partida (não um por questão) com o desempenho
+    de cada questão. Chamado quando a partida chega ao pódio ou quando o
+    professor encerra a sala no meio. Anônimo: só contagens, nenhum nome."""
+    if room.get("resultado_salvo") or not room.get("desempenho"):
+        return
+    room["resultado_salvo"] = True
+    topic = room.get("topic") or {}
+    try:
+        save_record("resultados_partidas", {
+            "sala": room.get("id", ""),
+            "tema_id": str(topic.get("id", "")),
+            "tema": topic.get("name", ""),
+            "disciplina": topic.get("disciplina") or room.get("disciplina") or "",
+            "tipo": "personalizado" if topic.get("id") == "custom" else "banco",
+            "jogadores": len(room.get("players", {})),
+            "questoes": room["desempenho"],
+        })
+    except Exception as e:
+        print("Robô Curador: não consegui salvar o resultado da partida:", repr(e))
 
 
 @app.websocket("/ws")
@@ -2246,7 +2289,7 @@ async def ws_endpoint(ws: WebSocket):
                 room_id = make_code()
                 room = {
                     "id": room_id,
-                    "topic": {"id": "custom", "name": f"{tema} (personalizado)"},
+                    "topic": {"id": "custom", "name": f"{tema} (personalizado)", "disciplina": disciplina},
                     "teacher": ws,
                     "players": {},
                     "questions": shuffle_questions(perguntas),
@@ -2384,6 +2427,7 @@ async def ws_endpoint(ws: WebSocket):
             ):
                 if room["current"] >= len(room["questions"]) - 1:
                     room["phase"] = "podium"
+                    salvar_resultado_partida(room)
                     await broadcast(room)
                 else:
                     await start_question(room)
@@ -2412,6 +2456,7 @@ async def ws_endpoint(ws: WebSocket):
                 # Professor encerra a sala pra todo mundo, em qualquer fase
                 # (lobby, pergunta, resultado ou pódio) — não precisa esperar
                 # chegar ao fim das questões pra poder fechar.
+                salvar_resultado_partida(room)
                 for p in list(room["players"].values()):
                     await send(p["ws"], {"type": "closed", "message": "O professor encerrou a sala."})
                 rooms.pop(room["id"], None)
@@ -2534,3 +2579,94 @@ def api_videos():
                 raise HTTPException(status_code=502, detail="Não foi possível ler o canal agora.")
     return JSONResponse({"channelId": YT_CHANNEL_ID, "videos": _YT_CACHE["videos"]},
                         headers={"Cache-Control": "public, max-age=300"})
+
+
+# ---------------------------------------------------------------------------
+# Robô Curador (veja curador.py): toda terça às 19h (Brasília) o GitHub
+# Actions chama /api/curador/rodar. O robô lê os dados da semana, pede
+# sugestões de conteúdo à Estudativa IA e envia o relatório por Telegram e
+# e-mail. Os relatórios ficam guardados em "relatorios_curador" e aparecem
+# na aba "Robô Curador" do painel do admin.
+# ---------------------------------------------------------------------------
+import curador
+
+
+def _painel_url(request: Request):
+    url = os.environ.get("CURADOR_PAINEL_URL", "").strip()
+    if url:
+        return url
+    base = str(request.base_url).rstrip("/")
+    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
+        base = "https://" + base[len("http://"):]
+    return base + "/admin.html#curador"
+
+
+async def _executar_curador(request: Request, origem: str, enviar: bool = True):
+    rel = await curador.gerar_relatorio(
+        load_records=load_records,
+        topics=DATA["topics"],
+        groq_key=get_groq_key(),
+        groq_model=GROQ_MODEL,
+        painel_url=_painel_url(request),
+    )
+    rel["envio"] = await curador.enviar_relatorio(rel) if enviar else {}
+    rel["origem"] = origem
+    return save_record("relatorios_curador", rel)
+
+
+@app.post("/api/curador/rodar")
+async def curador_rodar(request: Request, forcar: bool = False):
+    esperado = os.environ.get("CURADOR_TOKEN", "")
+    recebido = request.headers.get("x-curador-token", "")
+    if not esperado:
+        return JSONResponse({"error": "CURADOR_TOKEN não configurado no servidor."}, status_code=503)
+    if not hmac.compare_digest(recebido, esperado):
+        return JSONResponse({"error": "Token inválido."}, status_code=401)
+
+    # Evita relatório duplicado se o agendador tentar de novo (ex.: o Render
+    # demorou pra acordar e a primeira tentativa deu tempo esgotado).
+    if not forcar:
+        limite = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 20 * 3600))
+        recentes = [
+            r for r in load_records("relatorios_curador")
+            if r.get("origem") == "agendado" and r.get("criadoEm", "") >= limite
+        ]
+        if recentes:
+            return JSONResponse({"ok": True, "pulado": True, "motivo": "Já existe um relatório agendado nas últimas 20 horas.", "id": recentes[0].get("id")})
+
+    entry = await _executar_curador(request, "agendado")
+    return JSONResponse({"ok": True, "id": entry["id"], "envio": entry.get("envio"), "fonte": entry.get("fonte")})
+
+
+class CuradorGerarRequest(BaseModel):
+    enviar: bool = False
+
+
+@app.post("/api/admin/curador/gerar")
+async def curador_gerar(req: CuradorGerarRequest, request: Request, _: bool = Depends(require_admin)):
+    entry = await _executar_curador(request, "manual", enviar=req.enviar)
+    return JSONResponse(entry)
+
+
+@app.get("/api/admin/curador/relatorios")
+def curador_relatorios(_: bool = Depends(require_admin)):
+    return JSONResponse(load_records("relatorios_curador")[:20])
+
+
+@app.get("/api/admin/curador/status")
+def curador_status(_: bool = Depends(require_admin)):
+    tem = lambda k: bool(os.environ.get(k, "").strip())
+    return JSONResponse({
+        "groq": tem("GROQ_API_KEY"),
+        "agendador": tem("CURADOR_TOKEN"),
+        "telegram_bot": tem("TELEGRAM_BOT_TOKEN"),
+        "telegram_chat": tem("TELEGRAM_CHAT_ID"),
+        "email_resend": tem("RESEND_API_KEY"),
+        "email_para": tem("CURADOR_EMAIL_PARA"),
+        "firestore": get_firestore_db() is not None,
+    })
+
+
+@app.get("/api/admin/curador/telegram-chats")
+async def curador_telegram_chats(_: bool = Depends(require_admin)):
+    return JSONResponse(await curador.descobrir_chats_telegram())
