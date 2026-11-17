@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Laboratório de Prompts — Aula 24</title>
+<style>
+:root{--bg:#0b1224;--p:#14213b;--line:#344967;--txt:#edf4ff;--muted:#b2bfd5;--cyan:#53d9ee;--violet:#ad91ff;--ok:#6ee7a0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.5 system-ui,Arial,sans-serif}
+.wrap{max-width:1000px;margin:auto;padding:22px}
+header,.card{background:var(--p);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:16px}
+header{background:linear-gradient(130deg,#172b4c,#252348)}
+.k{color:var(--cyan);font-weight:bold;letter-spacing:.12em;text-transform:uppercase;font-size:.8rem}
+h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.1;margin:8px 0}
+h2{margin:0 0 10px}
+p,.hint{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+label{display:block;font-weight:700;margin:12px 0 6px}
+textarea,input{width:100%;padding:11px;border-radius:10px;border:1px solid #526786;background:#091529;color:var(--txt);font:inherit}
+textarea{min-height:95px;resize:vertical}
+button{padding:11px 15px;border:0;border-radius:10px;background:var(--cyan);font-weight:bold;cursor:pointer;margin:6px 5px 0 0;color:#061522;font:inherit;font-weight:bold}
+button.alt{background:#344867;color:white}
+button.purp{background:var(--violet)}
+button:active{transform:translateY(1px)}
+.out{white-space:pre-wrap;background:#081225;border:1px dashed #60799d;padding:14px;border-radius:12px;min-height:100px;font:inherit;color:var(--txt);width:100%}
+textarea.out{resize:vertical}
+a{color:var(--cyan)}
+.checks label{font-weight:normal;display:flex;gap:8px;align-items:center}
+.checks input{width:auto}
+.bar{height:8px;background:#31425e;border-radius:8px;overflow:hidden}
+.bar span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--violet));transition:width .3s}
+.msg{display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:#0f2a2e;border:1px solid var(--ok);color:var(--ok);font-weight:600}
+.msg.err{background:#2e1a1a;border-color:#ff8a8a;color:#ffb4b4}
+.msg.show{display:block}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#0f2a2e;border:1px solid var(--ok);color:var(--ok);padding:12px 18px;border-radius:12px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .25s;z-index:99;max-width:90vw;text-align:center}
+.toast.err{background:#2e1a1a;border-color:#ff8a8a;color:#ffb4b4}
+.toast.show{opacity:1}
+.ident{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.gate{max-width:460px;margin:40px auto}
+.gate input{margin-bottom:10px}
+.hidden{display:none!important}
+.quem{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;border-radius:12px;background:rgba(0,0,0,.25);border:1px solid var(--line)}
+.quem b{color:var(--cyan)}
+button.env{background:var(--ok);font-size:1.05rem}
+.hp{position:absolute;left:-9999px;opacity:0;height:0;width:0}
+@media(max-width:700px){.grid,.ident{grid-template-columns:1fr}.wrap{padding:12px}}
+@media print{
+  body{background:white;color:#111}
+  .card,header{background:white;color:#111;border:1px solid #aaa;break-inside:avoid}
+  p,.hint{color:#333}
+  button,.toast,.msg,.noprint{display:none!important}
+  textarea,input,.out{color:#111;background:white;border:1px solid #999}
+}
+</style>
+</head>
+<body>
+<div class="wrap gate card" id="gate">
+  <div class="k">Aula 24 • Laboratório prático</div>
+  <h2 style="margin:8px 0 4px">Entre com sua conta de aluno</h2>
+  <p>Use o mesmo e-mail e senha do portal <b>Alunos GI Informática</b>. Suas respostas ficam registradas no seu nome.</p>
+  <label for="gEmail">E-mail</label><input id="gEmail" type="email" autocomplete="username" placeholder="seu@email.com">
+  <label for="gSenha">Senha</label><input id="gSenha" type="password" autocomplete="current-password" placeholder="Sua senha">
+  <input class="hp" id="gSite" name="site" tabindex="-1" autocomplete="off">
+  <button type="button" id="btnEntrar">Entrar e começar</button>
+  <div class="msg" id="msgGate"></div>
+  <p class="hint" style="margin-top:12px">Ainda não tem conta? <a href="https://www.estudativa.com.br/gi-informatica/" target="_blank" rel="noopener">Cadastre-se no portal</a> com o código da turma que o professor passou e volte aqui.</p>
+</div>
+
+<div class="wrap hidden" id="app">
+
+<header>
+  <div class="k">Aula 24 • Laboratório prático</div>
+  <h1>🔧 A Arte da Engenharia de Prompt</h1>
+  <p>Transforme um pedido genérico em uma instrução clara, contextualizada e útil. Monte, teste, compare e refine seu prompt.</p>
+  <div class="quem"><span>Aluno(a): <b id="quemNome">—</b> <span id="quemTurma" class="hint"></span></span><button type="button" class="alt" id="btnSair">Sair da conta</button></div>
+  <input type="hidden" id="nome"><input type="hidden" id="turma">
+</header>
+
+<div class="grid">
+  <section class="card"><h2>Os quatro elementos</h2>
+    <p><b>Persona:</b> quem a IA deve representar.</p>
+    <p><b>Contexto:</b> situação, objetivo e público.</p>
+    <p><b>Instruções:</b> tarefa que deve realizar.</p>
+    <p><b>Restrições:</b> formato, tamanho, tom e limites.</p>
+  </section>
+  <section class="card"><h2>Observe a diferença</h2>
+    <p><b>Genérico:</b> “Faça um roteiro sobre energia solar.”</p>
+    <p><b>Estruturado:</b> “Atue como roteirista educativo. Crie para estudantes do 8º ano um roteiro de vídeo de 3 minutos sobre energia solar, com abertura, três tópicos e conclusão. Use até 400 palavras e não invente dados.”</p>
+  </section>
+</div>
+
+<section class="card"><h2>1. Monte seu prompt</h2>
+  <p>Preencha os campos. Depois, clique em montar e copie o comando para testar nas ferramentas.</p>
+  <label for="tema">Tema</label><input id="tema" value="A importância da água para a sociedade">
+  <div class="grid">
+    <div><label for="persona">1. Persona — quem a IA será?</label><textarea id="persona">Você é um roteirista educativo especializado em explicar ciência para adolescentes.</textarea></div>
+    <div><label for="contexto">2. Contexto — para quem e para quê?</label><textarea id="contexto">O material será usado em uma aula para estudantes do 8º ano do Ensino Fundamental.</textarea></div>
+    <div><label for="instrucao">3. Instruções — o que fazer?</label><textarea id="instrucao">Produza um roteiro de vídeo com abertura, três tópicos de desenvolvimento e conclusão. Inclua uma pergunta para reflexão.</textarea></div>
+    <div><label for="restricoes">4. Restrições — quais limites seguir?</label><textarea id="restricoes">Use até 450 palavras, linguagem clara e tom didático. Evite jargões e não invente estatísticas ou fontes.</textarea></div>
+  </div>
+  <button type="button" id="btnMontar">Montar meu prompt</button>
+  <button type="button" class="alt" id="btnExemplo">Carregar exemplo</button>
+  <label for="prompt">Seu prompt estruturado</label>
+  <textarea id="prompt" class="out" readonly placeholder="Preencha os campos e clique em “Montar meu prompt”."></textarea>
+  <button type="button" class="purp" id="btnCopiarPrompt">Copiar prompt</button>
+  <div class="msg" id="msgPrompt"></div>
+</section>
+
+<div class="grid">
+  <section class="card"><h2>2. Teste nas ferramentas</h2>
+    <p>Use o mesmo prompt nas duas ferramentas e compare as respostas.</p>
+    <p><a href="https://chatgpt.com/" target="_blank" rel="noopener">Abrir ChatGPT ↗</a> | <a href="https://gemini.google.com/" target="_blank" rel="noopener">Abrir Gemini ↗</a></p>
+    <label for="resChatgpt">Resumo da resposta do ChatGPT</label><textarea id="resChatgpt" placeholder="O que ficou bom? O que faltou?"></textarea>
+    <label for="resGemini">Resumo da resposta do Gemini</label><textarea id="resGemini" placeholder="O que ficou bom? O que faltou?"></textarea>
+  </section>
+  <section class="card"><h2>3. Compare os resultados</h2>
+    <p>Marque os critérios atendidos pelas respostas.</p>
+    <div class="checks" id="criterios">
+      <label><input type="checkbox" class="crit"> Atendeu ao objetivo solicitado</label>
+      <label><input type="checkbox" class="crit"> Respeitou o público indicado</label>
+      <label><input type="checkbox" class="crit"> Seguiu o formato pedido</label>
+      <label><input type="checkbox" class="crit"> Usou o tom adequado</label>
+      <label><input type="checkbox" class="crit"> Apresentou informações verificáveis</label>
+      <label><input type="checkbox" class="crit"> Precisou de poucas correções</label>
+    </div>
+  </section>
+</div>
+
+<section class="card"><h2>4. Itere: melhore seu prompt</h2>
+  <p>Uma boa iteração aponta exatamente o que precisa mudar. Exemplo: “Reorganize o roteiro em etapas numeradas, acrescente uma situação cotidiana e mantenha o limite de palavras.”</p>
+  <label for="melhoria">O que você quer melhorar?</label>
+  <textarea id="melhoria" placeholder="Ex.: Acrescente exemplos práticos, torne a introdução mais envolvente e organize as etapas."></textarea>
+  <button type="button" id="btnRefinar">Criar comando de refinamento</button>
+  <label for="refinado">Comando para a próxima rodada</label>
+  <textarea id="refinado" class="out" readonly placeholder="Seu comando aparecerá aqui."></textarea>
+  <button type="button" class="alt" id="btnCopiarRefinado">Copiar refinamento</button>
+  <div class="msg" id="msgRefinado"></div>
+</section>
+
+<section class="card"><h2>5. Entregável e desafio autoral</h2>
+  <p>Entregue o prompt inicial, o prompt refinado e uma breve comparação entre ChatGPT e Gemini.</p>
+  <label for="autoral">Qual melhoria autoral você acrescentou?</label>
+  <textarea id="autoral" placeholder="Explique sua melhoria: organização, clareza, criatividade, funcionalidade ou outra."></textarea>
+  <div class="checks" id="etapas">
+    <label><input class="done" type="checkbox"> Entendi o conceito principal</label>
+    <label><input class="done" type="checkbox"> Executei a atividade</label>
+    <label><input class="done" type="checkbox"> Produzi o entregável</label>
+    <label><input class="done" type="checkbox"> Fiz uma melhoria autoral</label>
+  </div>
+  <div class="bar"><span id="prog"></span></div>
+  <p id="status">0 de 4 etapas concluídas</p>
+  <button type="button" class="env" id="btnEnviar">📤 Enviar para o professor</button>
+  <div class="msg" id="msgEnvio"></div>
+  <p class="hint" id="envioInfo" style="margin:6px 0 10px"></p>
+  <button type="button" id="btnPdf">Baixar minhas respostas em PDF</button>
+  <button type="button" class="alt" id="btnImprimir">Imprimir / Salvar como PDF</button>
+  <button type="button" class="purp" id="btnCopiarTudo">Copiar todas as respostas</button>
+  <button type="button" class="alt" id="btnLimpar">Limpar tudo</button>
+  <input class="hp" id="site" name="site" tabindex="-1" autocomplete="off">
+  <div class="msg" id="msgPdf"></div>
+  <p class="hint noprint" style="margin-top:10px">Se o download não abrir aqui dentro, use “Imprimir / Salvar como PDF” ou “Copiar todas as respostas” e cole em um documento.</p>
+</section>
+
+<p style="text-align:center">Material didático • Aula 24 — A Arte da Engenharia de Prompt</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- utilidades ---------- */
+function $(id){return document.getElementById(id)}
+function v(id){var el=$(id);return el?String(el.value||'').trim():''}
+function on(id,ev,fn){var el=$(id);if(el)el.addEventListener(ev,fn)}
+
+var toastTimer=null;
+function toast(texto,erro){
+  var t=$('toast');if(!t)return;
+  t.textContent=texto;t.className='toast show'+(erro?' err':'');
+  clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.className='toast'+(erro?' err':'')},2600);
+}
+function msg(id,texto,erro){
+  var m=$(id);if(!m)return;
+  m.textContent=texto;m.className='msg show'+(erro?' err':'');
+  setTimeout(function(){m.className='msg'+(erro?' err':'')},5000);
+}
+
+/* ---------- montar / exemplo / refinar ---------- */
+function montar(){
+  var faltando=[];
+  if(!v('persona'))faltando.push('Persona');
+  if(!v('contexto'))faltando.push('Contexto');
+  if(!v('instrucao'))faltando.push('Instruções');
+  if(!v('restricoes'))faltando.push('Restrições');
+  if(!v('tema'))faltando.push('Tema');
+  if(faltando.length){msg('msgPrompt','Preencha: '+faltando.join(', ')+'.',true);return}
+  $('prompt').value=v('persona')+'\n\nCONTEXTO\n'+v('contexto')+'\n\nINSTRUÇÕES\n'+v('instrucao')+'\n\nTEMA\n'+v('tema')+'\n\nRESTRIÇÕES\n'+v('restricoes');
+  msg('msgPrompt','Prompt montado! Agora clique em “Copiar prompt”.');
+  salvar();
+}
+function exemplo(){
+  $('tema').value='A importância da água para a sociedade';
+  $('persona').value='Você é um roteirista educativo especializado em explicar ciência para adolescentes.';
+  $('contexto').value='O material será usado em uma aula para estudantes do 8º ano do Ensino Fundamental.';
+  $('instrucao').value='Produza um roteiro de vídeo com abertura, três tópicos de desenvolvimento e conclusão. Inclua uma pergunta para reflexão.';
+  $('restricoes').value='Use até 450 palavras, linguagem clara e tom didático. Evite jargões e não invente estatísticas ou fontes.';
+  montar();
+}
+function refinar(){
+  var m=v('melhoria');
+  if(!m){msg('msgRefinado','Escreva primeiro o que deseja melhorar.',true);$('melhoria').focus();return}
+  if(!/[.!?]$/.test(m))m+='.';
+  $('refinado').value='Revise a resposta anterior e faça estes ajustes: '+m+' Preserve os requisitos do prompt original. Se não puder atender com precisão, explique a limitação em vez de inventar informações.';
+  msg('msgRefinado','Comando criado! Clique em “Copiar refinamento”.');
+  salvar();
+}
+
+/* ---------- copiar (com várias alternativas) ---------- */
+function copiarTexto(texto,msgId){
+  if(!texto){msg(msgId,'Não há texto para copiar ainda.',true);return}
+  var ok=false;
+  function sucesso(){msg(msgId,'Texto copiado! Agora cole na ferramenta de IA.');toast('Copiado!')}
+  function falha(){
+    // deixa o texto selecionado para o aluno copiar com Ctrl+C
+    msg(msgId,'Não consegui copiar automaticamente. O texto está selecionado: aperte Ctrl+C (ou toque e segure para copiar).',true);
+  }
+  // 1) execCommand com textarea temporária (funciona na maioria dos iframes)
+  try{
+    var ta=document.createElement('textarea');
+    ta.value=texto;ta.setAttribute('readonly','');
+    ta.style.position='fixed';ta.style.top='0';ta.style.left='0';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,texto.length);
+    ok=document.execCommand('copy');
+    document.body.removeChild(ta);
+  }catch(e){ok=false}
+  if(ok){sucesso();return}
+  // 2) API moderna
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(texto).then(sucesso,function(){selecionarSaida(msgId);falha()});
+    return;
+  }
+  selecionarSaida(msgId);falha();
+}
+function selecionarSaida(msgId){
+  var id=msgId==='msgPrompt'?'prompt':msgId==='msgRefinado'?'refinado':null;
+  if(!id)return;
+  try{var el=$(id);el.focus();el.select();el.setSelectionRange(0,el.value.length)}catch(e){}
+}
+
+/* ---------- progresso ---------- */
+function progresso(){
+  var boxes=document.querySelectorAll('.done');var n=0;
+  for(var i=0;i<boxes.length;i++)if(boxes[i].checked)n++;
+  $('prog').style.width=(n*25)+'%';
+  $('status').textContent=n+' de 4 etapas concluídas';
+}
+
+/* ---------- salvar automaticamente (se o navegador permitir) ---------- */
+var CAMPOS=['tema','persona','contexto','instrucao','restricoes','prompt','resChatgpt','resGemini','melhoria','refinado','autoral'];
+function salvar(){
+  try{
+    var d={};
+    for(var i=0;i<CAMPOS.length;i++)d[CAMPOS[i]]=$(CAMPOS[i]).value;
+    d.crit=[].map.call(document.querySelectorAll('.crit'),function(c){return c.checked});
+    d.done=[].map.call(document.querySelectorAll('.done'),function(c){return c.checked});
+    localStorage.setItem('gi_'+ATIVIDADE_ID,JSON.stringify(d));
+  }catch(e){}
+}
+function restaurar(){
+  try{
+    var d=JSON.parse(localStorage.getItem('gi_'+ATIVIDADE_ID)||'null');if(!d)return;
+    for(var i=0;i<CAMPOS.length;i++)if(typeof d[CAMPOS[i]]==='string')$(CAMPOS[i]).value=d[CAMPOS[i]];
+    var c=document.querySelectorAll('.crit'),k=document.querySelectorAll('.done');
+    if(d.crit)for(var a=0;a<c.length;a++)c[a].checked=!!d.crit[a];
+    if(d.done)for(var b=0;b<k.length;b++)k[b].checked=!!d.done[b];
+  }catch(e){}
+}
+function limpar(){
+  if(!confirmar('Apagar todas as respostas desta página?'))return;
+  for(var i=0;i<CAMPOS.length;i++)$(CAMPOS[i]).value='';
+  var c=document.querySelectorAll('.crit, .done');
+  for(var a=0;a<c.length;a++)c[a].checked=false;
+  try{localStorage.removeItem('gi_'+ATIVIDADE_ID)}catch(e){}
+  progresso();toast('Respostas apagadas.');
+}
+function confirmar(t){try{return window.confirm(t)}catch(e){return true}}
+
+/* ---------- texto completo das respostas ---------- */
+function rotulos(sel){
+  var labs=document.querySelectorAll(sel+' label'),out=[];
+  for(var i=0;i<labs.length;i++){
+    var cb=labs[i].querySelector('input');
+    out.push((cb&&cb.checked?'[X] ':'[ ] ')+labs[i].textContent.trim());
+  }
+  return out;
+}
+function textoCompleto(){
+  var L=[];
+  L.push('LABORATÓRIO DE PROMPTS — AULA 24');
+  L.push('A Arte da Engenharia de Prompt');
+  L.push('');
+  L.push('Aluno(a): '+(v('nome')||'________________________')+'    Turma: '+(v('turma')||'________'));
+  L.push('Data: '+new Date().toLocaleDateString('pt-BR'));
+  L.push('');
+  L.push('1. MONTAGEM DO PROMPT');
+  L.push('Tema: '+v('tema'));
+  L.push('Persona: '+v('persona'));
+  L.push('Contexto: '+v('contexto'));
+  L.push('Instruções: '+v('instrucao'));
+  L.push('Restrições: '+v('restricoes'));
+  L.push('');
+  L.push('PROMPT ESTRUTURADO (INICIAL)');
+  L.push(v('prompt')||'(não montado)');
+  L.push('');
+  L.push('2. TESTE NAS FERRAMENTAS');
+  L.push('Resumo da resposta do ChatGPT: '+(v('resChatgpt')||'—'));
+  L.push('Resumo da resposta do Gemini: '+(v('resGemini')||'—'));
+  L.push('');
+  L.push('3. CRITÉRIOS ATENDIDOS');
+  L=L.concat(rotulos('#criterios'));
+  L.push('');
+  L.push('4. ITERAÇÃO');
+  L.push('O que quero melhorar: '+(v('melhoria')||'—'));
+  L.push('Comando de refinamento (PROMPT REFINADO): '+(v('refinado')||'—'));
+  L.push('');
+  L.push('5. ENTREGÁVEL E DESAFIO AUTORAL');
+  L.push('Melhoria autoral: '+(v('autoral')||'—'));
+  L=L.concat(rotulos('#etapas'));
+  L.push('');
+  L.push($('status').textContent);
+  return L.join('\n');
+}
+
+/* ---------- gerador de PDF embutido (sem bibliotecas externas) ---------- */
+var W={32:278,33:278,34:355,35:556,36:556,37:889,38:667,39:191,40:333,41:333,42:389,43:584,44:278,45:333,46:278,47:278,48:556,49:556,50:556,51:556,52:556,53:556,54:556,55:556,56:556,57:556,58:278,59:278,60:584,61:584,62:584,63:556,64:1015,65:667,66:667,67:722,68:722,69:667,70:611,71:778,72:722,73:278,74:500,75:667,76:556,77:833,78:722,79:778,80:667,81:778,82:722,83:667,84:611,85:722,86:667,87:944,88:667,89:667,90:611,91:278,92:278,93:278,94:469,95:556,96:333,97:556,98:556,99:500,100:556,101:556,102:278,103:556,104:556,105:222,106:222,107:500,108:222,109:833,110:556,111:556,112:556,113:556,114:333,115:500,116:278,117:556,118:500,119:722,120:500,121:500,122:500,123:334,124:260,125:334,126:584};
+var MAPA={8220:147,8221:148,8216:145,8217:146,8211:150,8212:151,8230:133,8226:149,8364:128};
+function cp1252(s){ // devolve string onde cada char é um byte
+  var out='';
+  s=s.normalize?s.normalize('NFC'):s;
+  for(var i=0;i<s.length;i++){
+    var c=s.charCodeAt(i);
+    if(c>=0xD800&&c<=0xDFFF){ // emoji / surrogates: ignora
+      if(c<=0xDBFF)i++;continue;
+    }
+    if(c<32)continue;
+    if(c<127)out+=String.fromCharCode(c);
+    else if(c>=160&&c<=255)out+=String.fromCharCode(c);
+    else if(MAPA[c])out+=String.fromCharCode(MAPA[c]);
+    else out+='?';
+  }
+  return out;
+}
+function largura(s,tam){
+  var t=0;
+  for(var i=0;i<s.length;i++){var c=s.charCodeAt(i);var w=W[c];if(!w){w=(c>=192&&c<=255)?556:556}t+=w}
+  return t*tam/1000;
+}
+function quebrar(s,tam,max){
+  var linhas=[],paras=s.split('\n');
+  for(var p=0;p<paras.length;p++){
+    var palavras=paras[p].split(' '),atual='';
+    for(var i=0;i<palavras.length;i++){
+      var teste=atual?atual+' '+palavras[i]:palavras[i];
+      if(largura(teste,tam)<=max)atual=teste;
+      else{
+        if(atual)linhas.push(atual);
+        // palavra enorme: corta na marra
+        var pw=palavras[i];
+        while(largura(pw,tam)>max&&pw.length>1){
+          var n=pw.length;while(n>1&&largura(pw.slice(0,n),tam)>max)n--;
+          linhas.push(pw.slice(0,n));pw=pw.slice(n);
+        }
+        atual=pw;
+      }
+    }
+    linhas.push(atual);
+  }
+  return linhas;
+}
+function esc(s){return s.replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)')}
+function gerarPDF(texto){
+  var PW=595.28,PH=841.89,M=50,TAM=11,LH=15,MAX=PW-2*M;
+  var paginas=[],cmd=[],y=PH-M;
+  function novaPagina(){if(cmd.length)paginas.push(cmd.join('\n'));cmd=[];y=PH-M}
+  function linha(s,bold,tam){
+    tam=tam||TAM;var lh=tam*1.35;
+    if(y-lh<M){novaPagina()}
+    cmd.push('BT /'+(bold?'F2':'F1')+' '+tam+' Tf '+M+' '+(y-tam).toFixed(2)+' Td ('+esc(s)+') Tj ET');
+    y-=lh;
+  }
+  var ls=texto.split('\n');
+  for(var i=0;i<ls.length;i++){
+    var raw=cp1252(ls[i]);
+    if(i===0){linha(raw,true,16);y-=4;continue}
+    if(i===1){linha(raw,false,12);y-=6;continue}
+    var bold=/^(\d\.\s[A-ZÁÉÍÓÚÂÊÔÃÕÇ ]+|PROMPT ESTRUTURADO|Aluno\(a\):)/.test(ls[i]);
+    if(bold&&/^\d\./.test(ls[i])){y-=4}
+    if(raw===''){y-=LH*0.6;continue}
+    var qs=quebrar(raw,bold?TAM:TAM,MAX);
+    for(var q=0;q<qs.length;q++)linha(qs[q],bold&&q===0&&!/^Aluno/.test(ls[i]),TAM);
+  }
+  novaPagina();
+  // monta objetos
+  var objs=[];
+  objs.push('<< /Type /Catalog /Pages 2 0 R >>');                         // 1
+  objs.push('');                                                            // 2 (pages, preenchido depois)
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');       // 3
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');  // 4
+  var kids=[];
+  for(var p=0;p<paginas.length;p++){
+    var stream=paginas[p];
+    objs.push('<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream');
+    var cId=objs.length;
+    objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+PW+' '+PH+'] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+cId+' 0 R >>');
+    kids.push(objs.length+' 0 R');
+  }
+  objs[1]='<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+kids.length+' >>';
+  var pdf='%PDF-1.4\n%\xE2\xE3\xCF\xD3\n',offs=[];
+  for(var o=0;o<objs.length;o++){offs.push(pdf.length);pdf+=(o+1)+' 0 obj\n'+objs[o]+'\nendobj\n'}
+  var xref=pdf.length;
+  pdf+='xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
+  for(var x=0;x<offs.length;x++)pdf+=('0000000000'+offs[x]).slice(-10)+' 00000 n \n';
+  pdf+='trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+  var bytes=new Uint8Array(pdf.length);
+  for(var b=0;b<pdf.length;b++)bytes[b]=pdf.charCodeAt(b)&255;
+  return new Blob([bytes],{type:'application/pdf'});
+}
+function nomeArquivo(){
+  var n=(v('nome')||'aluno').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'');
+  return 'aula24_prompt_'+n+'.pdf';
+}
+function baixarPDF(){
+  var blob;
+  try{blob=gerarPDF(textoCompleto())}catch(e){msg('msgPdf','Não foi possível gerar o PDF. Use “Imprimir / Salvar como PDF”.',true);return}
+  var url=URL.createObjectURL(blob),ok=false;
+  // 1) download direto
+  try{
+    var a=document.createElement('a');a.href=url;a.download=nomeArquivo();a.rel='noopener';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);ok=true;
+  }catch(e){ok=false}
+  // 2) abrir em nova aba (caso o download esteja bloqueado no incorporado)
+  var win=null;
+  try{win=window.open(url,'_blank')}catch(e){win=null}
+  if(ok||win){
+    msg('msgPdf','PDF gerado! Se ele não apareceu, verifique os downloads ou a nova aba. Caso nada abra, use “Imprimir / Salvar como PDF”.');
+    toast('PDF gerado!');
+  }else{
+    msg('msgPdf','O download está bloqueado dentro desta janela. Use “Imprimir / Salvar como PDF” ou “Copiar todas as respostas”.',true);
+  }
+  setTimeout(function(){try{URL.revokeObjectURL(url)}catch(e){}},60000);
+}
+function imprimir(){
+  salvar();
+  try{window.focus();window.print();msg('msgPdf','Na janela de impressão, escolha “Salvar como PDF”.')}
+  catch(e){msg('msgPdf','Use Ctrl+P no navegador para imprimir ou salvar em PDF.',true)}
+}
+
+/* ---------- conta do aluno + envio ao servidor ---------- */
+var ATIVIDADE_ID='aula24-prompts';
+var API=(/onrender\.com$|^localhost$|^127\./.test(location.hostname))?'':'https://batalha-de-historia.onrender.com';
+function api(caminho,opts){
+  opts=opts||{};opts.credentials='include';
+  if(opts.body&&typeof opts.body!=='string'){opts.headers={'Content-Type':'application/json'};opts.body=JSON.stringify(opts.body)}
+  return fetch(API+caminho,opts).then(function(r){return r.json().then(function(j){j._status=r.status;j._ok=r.ok;return j})});
+}
+function mostrarApp(me){
+  $('gate').classList.add('hidden');$('app').classList.remove('hidden');
+  $('quemNome').textContent=me.nome||'';$('quemTurma').textContent=me.turma?'· '+me.turma:'';
+  $('nome').value=me.nome||'';$('turma').value=me.turma||'';
+  restaurar();progresso();
+  api('/api/gi/atividades/'+ATIVIDADE_ID+'/minha').then(function(j){
+    if(j&&j.enviada&&j.respostas){
+      var r=j.respostas,vazioLocal=!v('resChatgpt')&&!v('melhoria')&&!v('autoral');
+      if(vazioLocal||confirmar('Você já enviou esta atividade antes. Quer carregar as respostas enviadas?')){
+        for(var i=0;i<CAMPOS.length;i++)if(typeof r[CAMPOS[i]]==='string')$(CAMPOS[i]).value=r[CAMPOS[i]];
+        var c=document.querySelectorAll('.crit'),k=document.querySelectorAll('.done');
+        if(r.criterios)for(var a=0;a<c.length;a++)c[a].checked=!!r.criterios[a];
+        if(r.etapas)for(var b=0;b<k.length;b++)k[b].checked=!!r.etapas[b];
+        progresso();
+      }
+      $('envioInfo').textContent='Último envio: '+String(j.enviadoEm||'').replace('T',' ').slice(0,16)+' (versão '+j.versao+'). Pode editar e enviar de novo.';
+    }
+  }).catch(function(){});
+}
+function verificarLogin(){
+  api('/api/gi/aluno/me').then(function(j){
+    if(j&&j.ok)mostrarApp(j);
+    else{$('gate').classList.remove('hidden')}
+  }).catch(function(){
+    $('gate').classList.remove('hidden');
+    msg('msgGate','Não consegui falar com o servidor. Confira a internet e tente de novo.',true);
+  });
+}
+function entrar(){
+  var email=v('gEmail'),senha=$('gSenha').value;
+  if(!email||!senha){msg('msgGate','Digite e-mail e senha.',true);return}
+  $('btnEntrar').disabled=true;
+  api('/api/gi/aluno/login',{method:'POST',body:{email:email,senha:senha,site:$('gSite').value}}).then(function(j){
+    $('btnEntrar').disabled=false;
+    if(j&&j.ok){mostrarApp(j)}else{msg('msgGate',(j&&j.error)||'Não foi possível entrar.',true)}
+  }).catch(function(){$('btnEntrar').disabled=false;msg('msgGate','Erro de conexão. Tente de novo.',true)});
+}
+function sair(){
+  api('/api/gi/aluno/logout',{method:'POST'}).then(function(){location.reload()}).catch(function(){location.reload()});
+}
+function coletar(){
+  var d={};
+  var enviar=['tema','persona','contexto','instrucao','restricoes','prompt','resChatgpt','resGemini','melhoria','refinado','autoral'];
+  for(var i=0;i<enviar.length;i++)d[enviar[i]]=v(enviar[i]);
+  d.criterios=[].map.call(document.querySelectorAll('.crit'),function(c){return c.checked});
+  d.etapas=[].map.call(document.querySelectorAll('.done'),function(c){return c.checked});
+  return d;
+}
+function enviar(){
+  if(!v('prompt')){msg('msgEnvio','Monte seu prompt (etapa 1) antes de enviar.',true);return}
+  salvar();
+  var b=$('btnEnviar');b.disabled=true;b.textContent='Enviando…';
+  api('/api/gi/atividades/'+ATIVIDADE_ID,{method:'POST',body:{respostas:coletar(),site:$('site').value}}).then(function(j){
+    b.disabled=false;b.textContent='📤 Enviar para o professor';
+    if(j&&j.ok){
+      msg('msgEnvio','Enviado! Suas respostas foram registradas no nome de '+j.nome+'.');toast('Enviado ao professor!');
+      $('envioInfo').textContent='Último envio: '+String(j.enviadoEm||'').replace('T',' ').slice(0,16)+' (versão '+j.versao+'). Pode editar e enviar de novo.';
+    }else if(j&&j._status===401){
+      msg('msgEnvio','Sua sessão expirou. Entre de novo.',true);setTimeout(function(){location.reload()},1500);
+    }else{msg('msgEnvio',(j&&j.error)||'Não foi possível enviar. Tente de novo.',true)}
+  }).catch(function(){b.disabled=false;b.textContent='📤 Enviar para o professor';msg('msgEnvio','Sem conexão. Suas respostas continuam salvas neste computador; tente enviar de novo em instantes.',true)});
+}
+
+/* ---------- ligações dos botões ---------- */
+function iniciar(){
+  on('btnEntrar','click',entrar);
+  on('gSenha','keydown',function(e){if(e.key==='Enter')entrar()});
+  on('btnSair','click',sair);
+  on('btnEnviar','click',enviar);
+  verificarLogin();
+  on('btnMontar','click',montar);
+  on('btnExemplo','click',exemplo);
+  on('btnRefinar','click',refinar);
+  on('btnCopiarPrompt','click',function(){copiarTexto(v('prompt'),'msgPrompt')});
+  on('btnCopiarRefinado','click',function(){copiarTexto(v('refinado'),'msgRefinado')});
+  on('btnCopiarTudo','click',function(){copiarTexto(textoCompleto(),'msgPdf')});
+  on('btnPdf','click',baixarPDF);
+  on('btnImprimir','click',imprimir);
+  on('btnLimpar','click',limpar);
+  var dones=document.querySelectorAll('.done');
+  for(var i=0;i<dones.length;i++)dones[i].addEventListener('change',function(){progresso();salvar()});
+  for(var c=0;c<CAMPOS.length;c++)on(CAMPOS[c],'input',salvar);
+  var crits=document.querySelectorAll('.crit');
+  for(var k=0;k<crits.length;k++)crits[k].addEventListener('change',salvar);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',iniciar);else iniciar();
+})();
+</script>
+</body>
+</html>
