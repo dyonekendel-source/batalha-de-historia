@@ -29,6 +29,15 @@
   form.inline label{font-size:12px;color:var(--muted);display:block;margin-top:8px}
   form.inline input, form.inline textarea{width:100%;margin-top:3px}
   .aluno-row{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:10px 0;flex-wrap:wrap;gap:8px}
+  .voucher-code{font-family:ui-monospace,Consolas,monospace;font-size:20px;letter-spacing:.12em;font-weight:900;color:var(--accent)}
+  .resp-card{border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-top:12px;background:rgba(0,0,0,.18)}
+  .resp-card summary{cursor:pointer;font-weight:800}
+  .resp-field{margin-top:10px}
+  .resp-field .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
+  .resp-field .v{white-space:pre-wrap;background:rgba(7,16,28,.6);border-radius:8px;padding:8px 10px;margin-top:3px;font-size:14px}
+  .filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}
+  .filtros select,.filtros input{width:auto;min-width:160px}
+  .nav-admin{display:flex;gap:8px;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -50,8 +59,11 @@
         <span class="eyebrow">GI Informática</span>
         <h1 style="margin:6px 0 0;font-size:30px">Módulos e aulas</h1>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn secondary" onclick="selectView('alunos')">👥 Alunos cadastrados</button>
+      <div class="nav-admin">
+        <button class="btn secondary" onclick="selectView('modulos')">📚 Módulos</button>
+        <button class="btn secondary" onclick="selectView('alunos')">👥 Alunos</button>
+        <button class="btn secondary" onclick="selectView('vouchers')">🎟️ Códigos de turma</button>
+        <button class="btn secondary" onclick="selectView('respostas')">📝 Respostas</button>
         <button class="btn secondary" onclick="logout()">Sair</button>
       </div>
     </header>
@@ -70,9 +82,39 @@
     </div>
 
     <div id="viewAlunos" class="hidden">
-      <button class="btn secondary" onclick="selectView('modulos')">← Voltar pros módulos</button>
       <h2 style="margin-top:16px">Alunos cadastrados</h2>
+      <div class="filtros"><input id="alunosBusca" placeholder="Buscar por nome, e-mail ou turma" oninput="renderAlunos()"></div>
       <div id="alunosList" style="margin-top:14px"></div>
+    </div>
+
+    <div id="viewVouchers" class="hidden">
+      <h2 style="margin-top:16px">Códigos de turma</h2>
+      <p class="mini">Assim que existir pelo menos um código, <b>ninguém cria conta sem digitar um código válido</b>. Crie um por turma, passe o código no quadro e desative quando a turma terminar o cadastro. Quem já tem conta continua entrando normalmente.</p>
+      <form class="inline" id="formVoucher">
+        <label>Nome da turma (aparece no painel e no CSV)</label>
+        <input id="vTurma" placeholder="Ex.: GI Informática 2026 — Terça">
+        <label>Código (deixe vazio para gerar automaticamente)</label>
+        <input id="vCodigo" placeholder="Ex.: GI2026A" style="text-transform:uppercase">
+        <label>Limite de cadastros com este código (0 = sem limite)</label>
+        <input id="vLimite" type="number" value="40" min="0" max="500">
+        <label>Validade (opcional)</label>
+        <input id="vValidade" type="date">
+        <button class="btn primary small" style="margin-top:10px" onclick="criarVoucher(event)">Criar código</button>
+      </form>
+      <div id="vouchersList" style="margin-top:16px"></div>
+    </div>
+
+    <div id="viewRespostas" class="hidden">
+      <h2 style="margin-top:16px">Respostas das atividades</h2>
+      <div class="filtros">
+        <select id="rAtividade" onchange="loadRespostas()"></select>
+        <select id="rTurma" onchange="renderRespostas()"><option value="">Todas as turmas</option></select>
+        <input id="rBusca" placeholder="Buscar aluno" oninput="renderRespostas()">
+        <button class="btn secondary small" onclick="baixarCsv()">⬇ Baixar CSV</button>
+        <button class="btn secondary small" onclick="imprimirRespostas()">🖨 Imprimir</button>
+      </div>
+      <p class="mini" id="rResumo"></p>
+      <div id="respostasList"></div>
     </div>
   </section>
 
@@ -118,7 +160,11 @@ async function logout(){
 function selectView(v){
   $('viewModulos').classList.toggle('hidden', v !== 'modulos');
   $('viewAlunos').classList.toggle('hidden', v !== 'alunos');
+  $('viewVouchers').classList.toggle('hidden', v !== 'vouchers');
+  $('viewRespostas').classList.toggle('hidden', v !== 'respostas');
   if (v === 'alunos') loadAlunos();
+  if (v === 'vouchers') loadVouchers();
+  if (v === 'respostas') loadAtividades();
 }
 
 function toggleNovoModulo(){ $('formNovoModulo').classList.toggle('hidden'); }
@@ -328,13 +374,25 @@ async function loadAlunos(){
 
 function renderAlunos(){
   const el = $('alunosList');
+  const q = ($('alunosBusca').value||'').toLowerCase();
+  const lista = cache.alunos.filter(a => !q || (a.nome+' '+a.email+' '+(a.turma||'')).toLowerCase().includes(q));
   if (!cache.alunos.length){ el.innerHTML = '<p class="muted">Nenhum aluno cadastrado ainda.</p>'; return; }
-  el.innerHTML = cache.alunos.map(a => `
+  el.innerHTML = `<p class="mini">${lista.length} de ${cache.alunos.length} aluno(s)</p>` + lista.map(a => `
     <div class="aluno-row">
-      <div><b>${esc(a.nome)}</b><br><span class="mini">${esc(a.email)} · desde ${esc((a.criadoEm||'').slice(0,10))}</span></div>
-      <button class="btn secondary small" onclick="resetarSenha('${a.id}','${esc(a.nome)}')">Resetar senha</button>
+      <div><b>${esc(a.nome)}</b>${a.turma ? `<span class="tag pub">${esc(a.turma)}</span>` : ''}<br><span class="mini">${esc(a.email)} · desde ${esc((a.criadoEm||'').slice(0,10))}</span></div>
+      <div>
+        <button class="btn secondary small" onclick="resetarSenha('${a.id}','${esc(a.nome)}')">Resetar senha</button>
+        <button class="btn secondary small" onclick="excluirAluno('${a.id}','${esc(a.nome)}')">Excluir</button>
+      </div>
     </div>
   `).join('');
+}
+
+async function excluirAluno(id, nome){
+  if (!confirm(`Excluir a conta de ${nome}? As respostas de atividade dele também serão apagadas.`)) return;
+  const r = await fetch(`/api/admin/gi/alunos/${id}`, {method:'DELETE'});
+  if (!r.ok) return alert('Erro ao excluir.');
+  loadAlunos();
 }
 
 async function resetarSenha(id, nome){
@@ -345,6 +403,122 @@ async function resetarSenha(id, nome){
   const data = await r.json();
   if (!r.ok) return alert(data.error || 'Erro ao resetar senha.');
   prompt(`Nova senha temporária de ${nome} (repasse para ele por fora, ex: WhatsApp). Peça para ele trocar depois de entrar:`, data.nova_senha);
+}
+
+/* ---------- Códigos de turma (vouchers) ---------- */
+async function loadVouchers(){
+  const r = await fetch('/api/admin/gi/vouchers');
+  cache.vouchers = r.ok ? await r.json() : [];
+  renderVouchers();
+}
+function renderVouchers(){
+  const el = $('vouchersList');
+  if (!cache.vouchers.length){ el.innerHTML = '<p class="muted">Nenhum código ainda — o cadastro está aberto para qualquer pessoa. Crie o primeiro código para fechar.</p>'; return; }
+  const hoje = new Date().toISOString().slice(0,10);
+  el.innerHTML = cache.vouchers.map(v => {
+    const vencido = v.validade && v.validade < hoje;
+    const esgotado = v.limite_usos && v.usos >= v.limite_usos;
+    const status = !v.ativo ? '<span class="tag hid">desativado</span>' : vencido ? '<span class="tag hid">vencido</span>' : esgotado ? '<span class="tag hid">esgotado</span>' : '<span class="tag pub">ativo</span>';
+    return `
+    <div class="aluno-row">
+      <div>
+        <span class="voucher-code">${esc(v.codigo)}</span> ${status}<br>
+        <b>${esc(v.turma)}</b> · <span class="mini">${v.usos||0} cadastro(s)${v.limite_usos ? ' de '+v.limite_usos : ''}${v.validade ? ' · vale até '+esc(v.validade.split('-').reverse().join('/')) : ''}</span>
+      </div>
+      <div>
+        <button class="btn secondary small" onclick="copiarTexto('${esc(v.codigo)}')">Copiar</button>
+        <button class="btn secondary small" onclick="alternarVoucher('${v.id}')">${v.ativo ? 'Desativar' : 'Reativar'}</button>
+        <button class="btn secondary small" onclick="excluirVoucher('${v.id}','${esc(v.codigo)}')">Excluir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function criarVoucher(ev){
+  ev.preventDefault();
+  const body = {turma: $('vTurma').value, codigo: $('vCodigo').value || null, limite_usos: parseInt($('vLimite').value||'0',10), validade: $('vValidade').value || null};
+  const r = await fetch('/api/admin/gi/vouchers', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const data = await r.json();
+  if (!r.ok) return alert(data.error || 'Erro ao criar código.');
+  $('vTurma').value=''; $('vCodigo').value='';
+  loadVouchers();
+  alert(`Código criado: ${data.codigo}\nPasse esse código para a turma na hora do cadastro.`);
+}
+async function alternarVoucher(id){
+  await fetch(`/api/admin/gi/vouchers/${id}/alternar`, {method:'POST'});
+  loadVouchers();
+}
+async function excluirVoucher(id, codigo){
+  if (!confirm(`Excluir o código ${codigo}? Quem já se cadastrou com ele continua com a conta.`)) return;
+  await fetch(`/api/admin/gi/vouchers/${id}`, {method:'DELETE'});
+  loadVouchers();
+}
+function copiarTexto(t){
+  try{ navigator.clipboard.writeText(t).then(()=>alert('Copiado: '+t)); }catch(e){ prompt('Copie o código:', t); }
+}
+
+/* ---------- Respostas das atividades ---------- */
+const ROTULOS = {nome:'Nome digitado', turma:'Turma', tema:'Tema', persona:'Persona', contexto:'Contexto', instrucao:'Instruções', restricoes:'Restrições', prompt:'Prompt estruturado (inicial)', resChatgpt:'Resumo — ChatGPT', resGemini:'Resumo — Gemini', criterios:'Critérios atendidos', melhoria:'O que quer melhorar', refinado:'Comando de refinamento (prompt refinado)', autoral:'Melhoria autoral', etapas:'Etapas concluídas'};
+const CRITERIOS_TXT = ['Atendeu ao objetivo solicitado','Respeitou o público indicado','Seguiu o formato pedido','Usou o tom adequado','Apresentou informações verificáveis','Precisou de poucas correções'];
+const ETAPAS_TXT = ['Entendi o conceito principal','Executei a atividade','Produzi o entregável','Fiz uma melhoria autoral'];
+
+async function loadAtividades(){
+  const r = await fetch('/api/admin/gi/atividades');
+  const lista = r.ok ? await r.json() : [];
+  const sel = $('rAtividade');
+  const atual = sel.value;
+  sel.innerHTML = lista.length ? lista.map(a => `<option value="${esc(a.atividade_id)}">${esc(a.atividade_id)} (${a.respostas} resposta(s))</option>`).join('') : '<option value="">Nenhuma atividade</option>';
+  if (atual) sel.value = atual;
+  loadRespostas();
+}
+async function loadRespostas(){
+  const id = $('rAtividade').value;
+  cache.respostas = [];
+  if (id){
+    const r = await fetch(`/api/admin/gi/atividades/${id}/respostas`);
+    cache.respostas = r.ok ? await r.json() : [];
+  }
+  const turmas = [...new Set(cache.respostas.map(x => x.turma||''))].filter(Boolean).sort();
+  const selT = $('rTurma'); const tAtual = selT.value;
+  selT.innerHTML = '<option value="">Todas as turmas</option>' + turmas.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  selT.value = turmas.includes(tAtual) ? tAtual : '';
+  renderRespostas();
+}
+function fmtValor(k, v){
+  if (Array.isArray(v)){
+    const txt = k==='criterios' ? CRITERIOS_TXT : k==='etapas' ? ETAPAS_TXT : null;
+    return v.map((x,i) => (x===true?'☑ ':x===false?'☐ ':'• ') + (txt && txt[i] ? txt[i] : (typeof x==='boolean'?'':x))).join('\n');
+  }
+  if (typeof v === 'boolean') return v ? 'sim' : 'não';
+  return v == null ? '' : String(v);
+}
+function renderRespostas(){
+  const el = $('respostasList');
+  const t = $('rTurma').value, q = ($('rBusca').value||'').toLowerCase();
+  const lista = cache.respostas.filter(r => (!t || (r.turma||'')===t) && (!q || (r.nome+' '+r.email).toLowerCase().includes(q)));
+  $('rResumo').textContent = cache.respostas.length ? `${lista.length} de ${cache.respostas.length} resposta(s)` : '';
+  if (!lista.length){ el.innerHTML = '<p class="muted">Nenhuma resposta ainda.</p>'; return; }
+  el.innerHTML = lista.map(r => {
+    const resp = r.respostas || {};
+    const chaves = Object.keys(ROTULOS).filter(k => k in resp).concat(Object.keys(resp).filter(k => !(k in ROTULOS)));
+    return `<details class="resp-card">
+      <summary>${esc(r.nome)} ${r.turma ? `<span class="tag pub">${esc(r.turma)}</span>` : ''} <span class="mini">· enviado ${esc((r.enviadoEm||'').replace('T',' ').slice(0,16))} · versão ${r.versao||1}</span></summary>
+      ${chaves.map(k => `<div class="resp-field"><div class="k">${esc(ROTULOS[k]||k)}</div><div class="v">${esc(fmtValor(k, resp[k]))||'—'}</div></div>`).join('')}
+      <button class="btn secondary small" style="margin-top:10px" onclick="excluirResposta('${r.id}','${esc(r.nome)}')">Excluir resposta</button>
+    </details>`;
+  }).join('');
+}
+async function excluirResposta(id, nome){
+  if (!confirm(`Excluir a resposta de ${nome}?`)) return;
+  await fetch(`/api/admin/gi/respostas/${id}`, {method:'DELETE'});
+  loadRespostas();
+}
+function baixarCsv(){
+  const id = $('rAtividade').value; if (!id) return;
+  window.location.href = `/api/admin/gi/atividades/${id}/respostas.csv`;
+}
+function imprimirRespostas(){
+  document.querySelectorAll('#respostasList details').forEach(d => d.open = true);
+  window.print();
 }
 
 checkLogin();

@@ -118,7 +118,7 @@ app.add_middleware(
         "http://localhost:8899",  # conveniência para testes locais
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -826,45 +826,136 @@ class GiAlunoCadastroRequest(BaseModel):
     nome: str
     email: str
     senha: str
+    voucher: str | None = None   # código da turma (gerado no painel admin)
+    site: str | None = None      # campo-armadilha (honeypot): humano deixa vazio
 
 
 class GiAlunoLoginRequest(BaseModel):
     email: str
     senha: str
+    site: str | None = None
+
+
+# --- Anti-spam das contas de aluno ---------------------------------------
+# Os computadores do laboratório saem todos pelo MESMO IP da escola, então os
+# limites por IP são altos de propósito (uma turma inteira cadastrando ou
+# entrando na mesma aula não pode travar). O que segura abuso de verdade é:
+# código de turma obrigatório no cadastro, honeypot, e limites POR CONTA nos
+# envios de atividade (mais abaixo).
+GI_RATE_CADASTRO_IP = (60, 60 * 60)        # 60 cadastros por hora por IP
+GI_RATE_LOGIN_IP = (400, 60 * 60)          # 400 tentativas de login por hora por IP
+GI_RATE_LOGIN_EMAIL = (10, 15 * 60)        # 10 senhas erradas por e-mail a cada 15 min
+_gi_rate_hits: dict[str, list[float]] = {}
+
+
+def _ip_do_request(request: Request):
+    """IP real do visitante. No Render o servidor fica atrás de um proxy, então
+    request.client.host seria sempre o IP do proxy — usa X-Forwarded-For."""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "desconhecido"
+
+
+def _gi_rate_ok(chave, limite, janela, registrar=True):
+    agora = time.time()
+    hist = [t for t in _gi_rate_hits.get(chave, []) if agora - t < janela]
+    if len(hist) >= limite:
+        _gi_rate_hits[chave] = hist
+        return False
+    if registrar:
+        hist.append(agora)
+    _gi_rate_hits[chave] = hist
+    # faxina ocasional pra não crescer pra sempre
+    if len(_gi_rate_hits) > 5000:
+        for k in [k for k, v in _gi_rate_hits.items() if not v or agora - v[-1] > 24 * 3600]:
+            _gi_rate_hits.pop(k, None)
+    return True
+
+
+def _normalizar_voucher(codigo):
+    return re.sub(r"[^A-Z0-9]", "", _sem_acento((codigo or "").upper()))
+
+
+def _voucher_valido(codigo):
+    """Devolve (voucher, erro). Voucher precisa existir, estar ativo, dentro da
+    validade e com usos disponíveis."""
+    codigo = _normalizar_voucher(codigo)
+    if not codigo:
+        return None, "Digite o código da turma que o professor passou."
+    v = next((x for x in load_records("gi_vouchers") if x.get("codigo") == codigo), None)
+    if not v or not v.get("ativo", True):
+        return None, "Código da turma inválido ou desativado. Confira com o professor."
+    validade = (v.get("validade") or "").strip()
+    if validade and time.strftime("%Y-%m-%d") > validade:
+        return None, "Esse código da turma já venceu. Peça um novo ao professor."
+    limite = int(v.get("limite_usos") or 0)
+    if limite and int(v.get("usos") or 0) >= limite:
+        return None, "Esse código da turma já atingiu o limite de cadastros. Fale com o professor."
+    return v, None
 
 
 @app.post("/api/gi/aluno/cadastro")
-def gi_aluno_cadastro(req: GiAlunoCadastroRequest):
+def gi_aluno_cadastro(req: GiAlunoCadastroRequest, request: Request):
+    ip = _ip_do_request(request)
+    if req.site:  # robô preencheu o campo invisível
+        return JSONResponse({"error": "Cadastro inválido."}, status_code=400)
+    if not _gi_rate_ok(f"cad:{ip}", *GI_RATE_CADASTRO_IP):
+        return JSONResponse({"error": "Muitos cadastros seguidos. Aguarde alguns minutos."}, status_code=429)
     nome = req.nome.strip()
     email = req.email.strip().lower()
     senha = req.senha
-    if len(nome) < 2:
+    if len(nome) < 2 or len(nome) > 80:
         return JSONResponse({"error": "Digite seu nome."}, status_code=400)
-    if "@" not in email or "." not in email.split("@")[-1]:
+    if "@" not in email or "." not in email.split("@")[-1] or len(email) > 120:
         return JSONResponse({"error": "Digite um e-mail válido."}, status_code=400)
-    if len(senha) < 6:
+    if len(senha) < 6 or len(senha) > 128:
         return JSONResponse({"error": "A senha precisa ter pelo menos 6 caracteres."}, status_code=400)
+
+    # Código da turma: obrigatório assim que o professor criar o primeiro
+    # voucher no painel. Antes disso o cadastro continua livre, como era.
+    voucher = None
+    if load_records("gi_vouchers"):
+        voucher, erro = _voucher_valido(req.voucher)
+        if erro:
+            return JSONResponse({"error": erro}, status_code=403)
+
     if find_gi_aluno_by_email(email):
         return JSONResponse({"error": "Já existe uma conta com esse e-mail. Tente entrar em vez de cadastrar."}, status_code=409)
 
     salt, digest = hash_senha(senha)
-    entry = save_record("gi_alunos", {
+    dados = {
         "nome": nome,
         "email": email,
         "senha_salt": salt,
         "senha_hash": digest,
-    })
-    response = JSONResponse({"ok": True, "nome": nome, "email": email})
+    }
+    if voucher:
+        dados["turma"] = voucher.get("turma", "")
+        dados["voucher"] = voucher.get("codigo", "")
+        update_record("gi_vouchers", voucher["id"], {"usos": int(voucher.get("usos") or 0) + 1})
+    entry = save_record("gi_alunos", dados)
+    response = JSONResponse({"ok": True, "nome": nome, "email": email, "turma": dados.get("turma", "")})
     _set_gi_aluno_cookie(response, entry["id"])
     return response
 
 
 @app.post("/api/gi/aluno/login")
-def gi_aluno_login(req: GiAlunoLoginRequest):
-    aluno = find_gi_aluno_by_email(req.email)
+def gi_aluno_login(req: GiAlunoLoginRequest, request: Request):
+    ip = _ip_do_request(request)
+    if req.site:
+        return JSONResponse({"error": "Login inválido."}, status_code=400)
+    if not _gi_rate_ok(f"login:{ip}", *GI_RATE_LOGIN_IP):
+        return JSONResponse({"error": "Muitas tentativas. Aguarde alguns minutos."}, status_code=429)
+    email = req.email.strip().lower()
+    if not _gi_rate_ok(f"loginmail:{email}", *GI_RATE_LOGIN_EMAIL, registrar=False):
+        return JSONResponse({"error": "Muitas senhas erradas para esse e-mail. Aguarde 15 minutos ou peça ao professor para resetar a senha."}, status_code=429)
+    aluno = find_gi_aluno_by_email(email)
     if not aluno or not verifica_senha(req.senha, aluno["senha_salt"], aluno["senha_hash"]):
+        _gi_rate_ok(f"loginmail:{email}", *GI_RATE_LOGIN_EMAIL)  # conta a falha
         return JSONResponse({"error": "E-mail ou senha incorretos."}, status_code=401)
-    response = JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno["email"]})
+    _gi_rate_hits.pop(f"loginmail:{email}", None)
+    response = JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno["email"], "turma": aluno.get("turma", "")})
     _set_gi_aluno_cookie(response, aluno["id"])
     return response
 
@@ -884,7 +975,7 @@ def gi_aluno_me(gi_aluno_session: str | None = Cookie(default=None)):
     aluno = find_gi_aluno_by_id(aluno_id)
     if not aluno:
         return JSONResponse({"ok": False})
-    return JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno["email"]})
+    return JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno["email"], "turma": aluno.get("turma", "")})
 
 
 def _modulo_publico(modulo, aulas_do_modulo):
@@ -1091,7 +1182,7 @@ async def gi_admin_upload(arquivo: UploadFile = File(...), _: bool = Depends(req
 @app.get("/api/admin/gi/alunos")
 def gi_admin_listar_alunos(_: bool = Depends(require_admin)):
     alunos = load_records("gi_alunos")
-    return JSONResponse([{"id": a["id"], "nome": a["nome"], "email": a["email"], "criadoEm": a.get("criadoEm")} for a in alunos])
+    return JSONResponse([{"id": a["id"], "nome": a["nome"], "email": a["email"], "turma": a.get("turma", ""), "criadoEm": a.get("criadoEm")} for a in alunos])
 
 
 class GiResetarSenhaRequest(BaseModel):
@@ -1113,6 +1204,301 @@ def gi_admin_resetar_senha(aluno_id: str, req: GiResetarSenhaRequest, _: bool = 
     salt, digest = hash_senha(nova_senha)
     update_record("gi_alunos", aluno_id, {"senha_salt": salt, "senha_hash": digest})
     return JSONResponse({"ok": True, "nova_senha": nova_senha, "gerada": gerada})
+
+
+@app.delete("/api/admin/gi/alunos/{aluno_id}")
+def gi_admin_excluir_aluno(aluno_id: str, _: bool = Depends(require_admin)):
+    """Remove a conta (e as respostas de atividade dela). Útil pra limpar
+    cadastro de brincadeira/spam."""
+    if not delete_record("gi_alunos", aluno_id):
+        return JSONResponse({"error": "Aluno não encontrado."}, status_code=404)
+    for r in load_records("gi_respostas"):
+        if r.get("aluno_id") == aluno_id:
+            delete_record("gi_respostas", r["id"])
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# GI Informática — códigos de turma (vouchers) e atividades com respostas
+# registradas.
+#
+# Vouchers: o professor cria um código por turma no painel (ex.: GI2026A). Sem
+# um código ativo o aluno não consegue criar conta. Dá pra desativar, limitar
+# usos e dar validade. Enquanto não existir nenhum voucher, o cadastro segue
+# aberto como antes (compatibilidade).
+#
+# Atividades: páginas como /gi/atividade/aula24 (servidas daqui mesmo, em
+# public/gi_atividades/) chamam POST /api/gi/atividades/<id> com as respostas.
+# Um registro por aluno por atividade (reenviar substitui). Limites por conta,
+# não por IP, porque o laboratório inteiro sai pelo mesmo IP.
+# ---------------------------------------------------------------------------
+GI_ATIVIDADE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
+GI_RESPOSTA_MAX_BYTES = 12 * 1024      # tamanho máximo do JSON de respostas
+GI_RESPOSTA_MAX_CAMPOS = 40
+GI_RESPOSTA_MAX_TEXTO = 4000           # por campo
+GI_RATE_ENVIO_ALUNO = (1, 8)           # 1 envio a cada 8 s por conta
+GI_RATE_ENVIO_ALUNO_DIA = (60, 24 * 3600)
+GI_RATE_ENVIO_IP = (900, 60 * 60)      # alto: laboratório inteiro no mesmo IP
+GI_ATIVIDADES_DIR = ROOT / "public/gi_atividades"
+
+
+def upsert_record(collection, record_id, data):
+    """Cria ou substitui um registro com id fixo (mesmo padrão Firestore/JSON)."""
+    entry = {"id": record_id, **data}
+    db = get_firestore_db()
+    if db is not None:
+        db.collection(collection).document(record_id).set(entry)
+        return entry
+    path = ROOT / f"{collection}.json"
+    items = [i for i in load_records(collection) if i.get("id") != record_id]
+    items.append(entry)
+    if len(items) > LOCAL_RECORDS_MAX:
+        items = items[-LOCAL_RECORDS_MAX:]
+    path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    return entry
+
+
+_CONTROLE_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _limpar_texto(valor, max_len=GI_RESPOSTA_MAX_TEXTO):
+    s = _CONTROLE_RE.sub("", str(valor)).strip()
+    return s[:max_len]
+
+
+def _sanitizar_respostas(respostas):
+    """Aceita só dict raso: chave curta -> texto / número / bool / lista de
+    bool ou texto. Qualquer outra coisa é descartada."""
+    if not isinstance(respostas, dict):
+        raise ValueError("Formato de respostas inválido.")
+    if len(respostas) > GI_RESPOSTA_MAX_CAMPOS:
+        raise ValueError("Respostas com campos demais.")
+    limpo = {}
+    for k, v in respostas.items():
+        chave = re.sub(r"[^a-zA-Z0-9_]", "", str(k))[:40]
+        if not chave:
+            continue
+        if isinstance(v, bool) or v is None:
+            limpo[chave] = v
+        elif isinstance(v, (int, float)):
+            limpo[chave] = v
+        elif isinstance(v, str):
+            limpo[chave] = _limpar_texto(v)
+        elif isinstance(v, list):
+            limpo[chave] = [
+                (x if isinstance(x, bool) else _limpar_texto(x, 300))
+                for x in v[:30] if isinstance(x, (bool, str, int, float))
+            ]
+        else:
+            raise ValueError("Tipo de resposta não permitido.")
+    return limpo
+
+
+class GiRespostaRequest(BaseModel):
+    respostas: dict
+    site: str | None = None  # honeypot
+
+
+@app.get("/gi/atividade/{atividade_id}")
+def gi_atividade_page(atividade_id: str):
+    """Página da atividade (HTML estático em public/gi_atividades/). Servida
+    pelo backend pra ficar no mesmo domínio da API — o cookie de aluno já vale."""
+    if not GI_ATIVIDADE_ID_RE.match(atividade_id):
+        raise HTTPException(status_code=404)
+    arquivo = GI_ATIVIDADES_DIR / f"{atividade_id}.html"
+    if not arquivo.exists():
+        raise HTTPException(status_code=404, detail="Atividade não encontrada.")
+    return FileResponse(arquivo)
+
+
+@app.get("/api/gi/atividades/{atividade_id}/minha")
+def gi_atividade_minha(atividade_id: str, aluno_id: str = Depends(require_gi_aluno)):
+    """Respostas já enviadas por este aluno (pra continuar em outro computador)."""
+    if not GI_ATIVIDADE_ID_RE.match(atividade_id):
+        raise HTTPException(status_code=404)
+    r = find_record("gi_respostas", f"{atividade_id}__{aluno_id}")
+    if not r:
+        return JSONResponse({"ok": True, "enviada": False})
+    return JSONResponse({"ok": True, "enviada": True, "respostas": r.get("respostas", {}),
+                         "enviadoEm": r.get("enviadoEm"), "versao": r.get("versao", 1)})
+
+
+@app.post("/api/gi/atividades/{atividade_id}")
+def gi_atividade_enviar(atividade_id: str, req: GiRespostaRequest, request: Request,
+                        aluno_id: str = Depends(require_gi_aluno)):
+    if not GI_ATIVIDADE_ID_RE.match(atividade_id):
+        raise HTTPException(status_code=404)
+    if req.site:
+        return JSONResponse({"error": "Envio inválido."}, status_code=400)
+    ip = _ip_do_request(request)
+    if not _gi_rate_ok(f"envio_ip:{ip}", *GI_RATE_ENVIO_IP):
+        return JSONResponse({"error": "Muitos envios desta rede. Tente de novo em alguns minutos."}, status_code=429)
+    if not _gi_rate_ok(f"envio_dia:{aluno_id}", *GI_RATE_ENVIO_ALUNO_DIA):
+        return JSONResponse({"error": "Você atingiu o limite de envios de hoje."}, status_code=429)
+    if not _gi_rate_ok(f"envio:{aluno_id}", *GI_RATE_ENVIO_ALUNO):
+        return JSONResponse({"error": "Calma! Espere alguns segundos antes de enviar de novo."}, status_code=429)
+
+    try:
+        respostas = _sanitizar_respostas(req.respostas)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if len(json.dumps(respostas, ensure_ascii=False)) > GI_RESPOSTA_MAX_BYTES:
+        return JSONResponse({"error": "Respostas grandes demais. Resuma um pouco o texto."}, status_code=413)
+    if not any(v not in ("", None, False, []) for v in respostas.values()):
+        return JSONResponse({"error": "Preencha a atividade antes de enviar."}, status_code=400)
+
+    aluno = find_gi_aluno_by_id(aluno_id)
+    if not aluno:
+        raise HTTPException(status_code=401, detail="Conta não encontrada. Entre de novo.")
+
+    doc_id = f"{atividade_id}__{aluno_id}"
+    anterior = find_record("gi_respostas", doc_id)
+    agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+    entry = upsert_record("gi_respostas", doc_id, {
+        "atividade_id": atividade_id,
+        "aluno_id": aluno_id,
+        "nome": aluno.get("nome", ""),
+        "email": aluno.get("email", ""),
+        "turma": aluno.get("turma", ""),
+        "respostas": respostas,
+        "criadoEm": (anterior or {}).get("criadoEm") or agora,
+        "enviadoEm": agora,
+        "versao": int((anterior or {}).get("versao") or 0) + 1,
+        "ip": ip,
+    })
+    return JSONResponse({"ok": True, "enviadoEm": entry["enviadoEm"], "versao": entry["versao"],
+                         "nome": entry["nome"]})
+
+
+# --- Admin: vouchers ---------------------------------------------------------
+
+class GiVoucherRequest(BaseModel):
+    codigo: str | None = None     # vazio = gera um código
+    turma: str
+    limite_usos: int = 40
+    validade: str | None = None   # "AAAA-MM-DD" ou vazio
+    ativo: bool = True
+
+
+def _gerar_codigo_voucher():
+    alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sem 0/O/1/I pra não confundir
+    return "GI" + "".join(random.choices(alfabeto, k=5))
+
+
+@app.get("/api/admin/gi/vouchers")
+def gi_admin_listar_vouchers(_: bool = Depends(require_admin)):
+    return JSONResponse(load_records("gi_vouchers"))
+
+
+@app.post("/api/admin/gi/vouchers")
+def gi_admin_criar_voucher(req: GiVoucherRequest, _: bool = Depends(require_admin)):
+    turma = _limpar_texto(req.turma, 60)
+    if not turma:
+        return JSONResponse({"error": "Dê um nome à turma (ex.: GI 2026 — Manhã)."}, status_code=400)
+    codigo = _normalizar_voucher(req.codigo) if req.codigo else _gerar_codigo_voucher()
+    if not (4 <= len(codigo) <= 20):
+        return JSONResponse({"error": "O código precisa ter de 4 a 20 letras/números."}, status_code=400)
+    existentes = {v.get("codigo") for v in load_records("gi_vouchers")}
+    while codigo in existentes:
+        if req.codigo:
+            return JSONResponse({"error": "Já existe um código igual."}, status_code=409)
+        codigo = _gerar_codigo_voucher()
+    validade = (req.validade or "").strip()
+    if validade and not re.match(r"^\d{4}-\d{2}-\d{2}$", validade):
+        return JSONResponse({"error": "Validade deve estar no formato AAAA-MM-DD."}, status_code=400)
+    entry = save_record("gi_vouchers", {
+        "codigo": codigo,
+        "turma": turma,
+        "limite_usos": max(0, min(500, int(req.limite_usos))),
+        "usos": 0,
+        "validade": validade or None,
+        "ativo": bool(req.ativo),
+    })
+    return JSONResponse(entry)
+
+
+@app.post("/api/admin/gi/vouchers/{voucher_id}/alternar")
+def gi_admin_alternar_voucher(voucher_id: str, _: bool = Depends(require_admin)):
+    v = find_record("gi_vouchers", voucher_id)
+    if not v:
+        return JSONResponse({"error": "Código não encontrado."}, status_code=404)
+    atualizado = update_record("gi_vouchers", voucher_id, {"ativo": not v.get("ativo", True)})
+    return JSONResponse(atualizado)
+
+
+@app.delete("/api/admin/gi/vouchers/{voucher_id}")
+def gi_admin_excluir_voucher(voucher_id: str, _: bool = Depends(require_admin)):
+    if not delete_record("gi_vouchers", voucher_id):
+        return JSONResponse({"error": "Código não encontrado."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+# --- Admin: respostas das atividades ----------------------------------------
+
+@app.get("/api/admin/gi/atividades")
+def gi_admin_listar_atividades(_: bool = Depends(require_admin)):
+    """Resumo: cada atividade que já recebeu resposta, com contagem e último envio."""
+    resumo = {}
+    for r in load_records("gi_respostas"):
+        a = r.get("atividade_id", "?")
+        item = resumo.setdefault(a, {"atividade_id": a, "respostas": 0, "ultimoEnvio": ""})
+        item["respostas"] += 1
+        item["ultimoEnvio"] = max(item["ultimoEnvio"], r.get("enviadoEm", ""))
+    # também lista páginas que existem mas ainda não têm resposta
+    if GI_ATIVIDADES_DIR.exists():
+        for f in GI_ATIVIDADES_DIR.glob("*.html"):
+            resumo.setdefault(f.stem, {"atividade_id": f.stem, "respostas": 0, "ultimoEnvio": ""})
+    return JSONResponse(sorted(resumo.values(), key=lambda x: x["atividade_id"]))
+
+
+@app.get("/api/admin/gi/atividades/{atividade_id}/respostas")
+def gi_admin_respostas(atividade_id: str, _: bool = Depends(require_admin)):
+    if not GI_ATIVIDADE_ID_RE.match(atividade_id):
+        raise HTTPException(status_code=404)
+    itens = [r for r in load_records("gi_respostas") if r.get("atividade_id") == atividade_id]
+    itens.sort(key=lambda r: (r.get("turma", ""), _sem_acento(r.get("nome", "")).lower()))
+    for r in itens:
+        r.pop("ip", None)
+    return JSONResponse(itens)
+
+
+@app.get("/api/admin/gi/atividades/{atividade_id}/respostas.csv")
+def gi_admin_respostas_csv(atividade_id: str, _: bool = Depends(require_admin)):
+    import csv
+    if not GI_ATIVIDADE_ID_RE.match(atividade_id):
+        raise HTTPException(status_code=404)
+    itens = [r for r in load_records("gi_respostas") if r.get("atividade_id") == atividade_id]
+    itens.sort(key=lambda r: (r.get("turma", ""), _sem_acento(r.get("nome", "")).lower()))
+    chaves = []
+    for r in itens:
+        for k in (r.get("respostas") or {}):
+            if k not in chaves:
+                chaves.append(k)
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM: Excel abre com acentos certos
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["nome", "turma", "email", "enviadoEm", "versao"] + chaves)
+    for r in itens:
+        resp = r.get("respostas") or {}
+        linha = [r.get("nome", ""), r.get("turma", ""), r.get("email", ""), r.get("enviadoEm", ""), r.get("versao", 1)]
+        for k in chaves:
+            v = resp.get(k, "")
+            if isinstance(v, list):
+                v = " | ".join("sim" if x is True else "não" if x is False else str(x) for x in v)
+            elif isinstance(v, bool):
+                v = "sim" if v else "não"
+            linha.append(v if v is not None else "")
+        w.writerow(linha)
+    return PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="respostas_{atividade_id}.csv"',
+    })
+
+
+@app.delete("/api/admin/gi/respostas/{resposta_id}")
+def gi_admin_excluir_resposta(resposta_id: str, _: bool = Depends(require_admin)):
+    if not delete_record("gi_respostas", resposta_id):
+        return JSONResponse({"error": "Resposta não encontrada."}, status_code=404)
+    return JSONResponse({"ok": True})
 
 
 # ---------------------------------------------------------------------------
