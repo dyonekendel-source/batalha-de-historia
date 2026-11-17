@@ -789,15 +789,18 @@ def verify_gi_aluno_token(token):
     return aluno_id
 
 
-def require_gi_aluno(gi_aluno_session: str | None = Cookie(default=None)):
+def require_gi_aluno(request: Request, gi_aluno_session: str | None = Cookie(default=None)):
     aluno_id = verify_gi_aluno_token(gi_aluno_session)
     if not aluno_id:
         raise HTTPException(status_code=401, detail="Você precisa entrar na sua conta de aluno.")
+    _gi_presenca_tocar(_ip_do_request(request), aluno_id)
     return aluno_id
 
 
 def find_gi_aluno_by_email(email):
     email = email.strip().lower()
+    if not email:
+        return None
     for a in load_records("gi_alunos"):
         if a.get("email", "").lower() == email:
             return a
@@ -895,8 +898,97 @@ def _voucher_valido(codigo):
     return v, None
 
 
+
+# --- Acesso por código da turma (voucher) -----------------------------------
+# O aluno só digita o código da turma + o próprio nome. Sem e-mail, sem senha.
+# Anti-spam: (1) o código é obrigatório e controlado pelo professor (ativar,
+# validade, limite de alunos); (2) no máximo GI_MAX_ACESSOS_IP alunos
+# DIFERENTES ativos ao mesmo tempo no mesmo IP (a sala toda sai pelo mesmo IP
+# da escola); (3) honeypot e limite de tentativas por IP.
+GI_MAX_ACESSOS_IP = 25                      # alunos ativos ao mesmo tempo por IP
+GI_PRESENCA_JANELA = 90 * 60                # "ativo" = visto nos últimos 90 min
+GI_RATE_ENTRAR_IP = (120, 15 * 60)          # tentativas de entrar por IP / 15 min
+_gi_presenca: dict[str, dict[str, float]] = {}
+
+
+def _gi_presenca_ativos(ip):
+    agora = time.time()
+    ativos = {a: t for a, t in _gi_presenca.get(ip, {}).items() if agora - t < GI_PRESENCA_JANELA}
+    if ativos:
+        _gi_presenca[ip] = ativos
+    else:
+        _gi_presenca.pop(ip, None)
+    return ativos
+
+
+def _gi_presenca_tocar(ip, aluno_id):
+    _gi_presenca.setdefault(ip, {})[aluno_id] = time.time()
+    if len(_gi_presenca) > 2000:
+        for k in list(_gi_presenca):
+            _gi_presenca_ativos(k)
+
+
+def _nome_chave(nome):
+    return re.sub(r"\s+", " ", _sem_acento((nome or "").strip().lower()))
+
+
+class GiAlunoEntrarRequest(BaseModel):
+    voucher: str
+    nome: str
+    site: str | None = None      # honeypot
+
+
+@app.post("/api/gi/aluno/entrar")
+def gi_aluno_entrar(req: GiAlunoEntrarRequest, request: Request):
+    ip = _ip_do_request(request)
+    if req.site:
+        return JSONResponse({"error": "Acesso inválido."}, status_code=400)
+    if not _gi_rate_ok(f"entrar:{ip}", *GI_RATE_ENTRAR_IP):
+        return JSONResponse({"error": "Muitas tentativas. Aguarde alguns minutos."}, status_code=429)
+    nome = re.sub(r"\s+", " ", req.nome.strip())
+    if len(nome) < 3 or len(nome) > 80:
+        return JSONResponse({"error": "Digite seu nome completo."}, status_code=400)
+    if not load_records("gi_vouchers"):
+        return JSONResponse({"error": "O professor ainda não liberou o acesso da turma."}, status_code=403)
+    voucher, erro = _voucher_valido(req.voucher)
+    if erro:
+        return JSONResponse({"error": erro}, status_code=403)
+
+    codigo = voucher.get("codigo", "")
+    chave = _nome_chave(nome)
+    aluno = next((a for a in load_records("gi_alunos")
+                  if a.get("voucher") == codigo and _nome_chave(a.get("nome")) == chave), None)
+    if aluno is None:
+        # conta antiga (criada com e-mail) da mesma turma e do mesmo nome também vale
+        turma = voucher.get("turma", "")
+        if turma:
+            aluno = next((a for a in load_records("gi_alunos")
+                          if a.get("turma") == turma and _nome_chave(a.get("nome")) == chave), None)
+
+    # limite de alunos simultâneos no mesmo IP
+    ativos = _gi_presenca_ativos(ip)
+    if (aluno is None or aluno["id"] not in ativos) and len(ativos) >= GI_MAX_ACESSOS_IP:
+        return JSONResponse({"error": f"Já há {GI_MAX_ACESSOS_IP} alunos conectados nesta rede ao mesmo tempo. Aguarde alguns minutos e tente de novo."}, status_code=429)
+
+    if aluno is None:
+        if not _gi_rate_ok(f"cad:{ip}", *GI_RATE_CADASTRO_IP):
+            return JSONResponse({"error": "Muitos acessos novos seguidos. Aguarde alguns minutos."}, status_code=429)
+        aluno = save_record("gi_alunos", {
+            "nome": nome, "email": "", "turma": voucher.get("turma", ""), "voucher": codigo,
+            "senha_salt": "", "senha_hash": "",
+        })
+        update_record("gi_vouchers", voucher["id"], {"usos": int(voucher.get("usos") or 0) + 1})
+
+    _gi_presenca_tocar(ip, aluno["id"])
+    response = JSONResponse({"ok": True, "nome": aluno["nome"], "turma": aluno.get("turma", "")})
+    _set_gi_aluno_cookie(response, aluno["id"])
+    return response
+
+
 @app.post("/api/gi/aluno/cadastro")
 def gi_aluno_cadastro(req: GiAlunoCadastroRequest, request: Request):
+    # Descontinuado: o acesso agora é só pelo código da turma (/api/gi/aluno/entrar).
+    return JSONResponse({"error": "O cadastro por e-mail foi substituído pelo código da turma."}, status_code=410)
     ip = _ip_do_request(request)
     if req.site:  # robô preencheu o campo invisível
         return JSONResponse({"error": "Cadastro inválido."}, status_code=400)
@@ -951,11 +1043,11 @@ def gi_aluno_login(req: GiAlunoLoginRequest, request: Request):
     if not _gi_rate_ok(f"loginmail:{email}", *GI_RATE_LOGIN_EMAIL, registrar=False):
         return JSONResponse({"error": "Muitas senhas erradas para esse e-mail. Aguarde 15 minutos ou peça ao professor para resetar a senha."}, status_code=429)
     aluno = find_gi_aluno_by_email(email)
-    if not aluno or not verifica_senha(req.senha, aluno["senha_salt"], aluno["senha_hash"]):
+    if not aluno or not aluno.get("senha_hash") or not verifica_senha(req.senha, aluno["senha_salt"], aluno["senha_hash"]):
         _gi_rate_ok(f"loginmail:{email}", *GI_RATE_LOGIN_EMAIL)  # conta a falha
         return JSONResponse({"error": "E-mail ou senha incorretos."}, status_code=401)
     _gi_rate_hits.pop(f"loginmail:{email}", None)
-    response = JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno["email"], "turma": aluno.get("turma", "")})
+    response = JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno.get("email", ""), "turma": aluno.get("turma", "")})
     _set_gi_aluno_cookie(response, aluno["id"])
     return response
 
@@ -968,14 +1060,15 @@ def gi_aluno_logout():
 
 
 @app.get("/api/gi/aluno/me")
-def gi_aluno_me(gi_aluno_session: str | None = Cookie(default=None)):
+def gi_aluno_me(request: Request, gi_aluno_session: str | None = Cookie(default=None)):
     aluno_id = verify_gi_aluno_token(gi_aluno_session)
     if not aluno_id:
         return JSONResponse({"ok": False})
     aluno = find_gi_aluno_by_id(aluno_id)
     if not aluno:
         return JSONResponse({"ok": False})
-    return JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno["email"], "turma": aluno.get("turma", "")})
+    _gi_presenca_tocar(_ip_do_request(request), aluno_id)
+    return JSONResponse({"ok": True, "nome": aluno["nome"], "email": aluno.get("email", ""), "turma": aluno.get("turma", "")})
 
 
 def _modulo_publico(modulo, aulas_do_modulo):
@@ -1182,7 +1275,7 @@ async def gi_admin_upload(arquivo: UploadFile = File(...), _: bool = Depends(req
 @app.get("/api/admin/gi/alunos")
 def gi_admin_listar_alunos(_: bool = Depends(require_admin)):
     alunos = load_records("gi_alunos")
-    return JSONResponse([{"id": a["id"], "nome": a["nome"], "email": a["email"], "turma": a.get("turma", ""), "criadoEm": a.get("criadoEm")} for a in alunos])
+    return JSONResponse([{"id": a["id"], "nome": a["nome"], "email": a.get("email", ""), "turma": a.get("turma", ""), "criadoEm": a.get("criadoEm")} for a in alunos])
 
 
 class GiResetarSenhaRequest(BaseModel):
