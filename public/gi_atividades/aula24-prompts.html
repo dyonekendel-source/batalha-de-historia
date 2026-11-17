@@ -57,14 +57,14 @@ button.env{background:var(--ok);font-size:1.05rem}
 <body>
 <div class="wrap gate card" id="gate">
   <div class="k">Aula 24 • Laboratório prático</div>
-  <h2 style="margin:8px 0 4px">Entre com sua conta de aluno</h2>
-  <p>Use o mesmo e-mail e senha do portal <b>Alunos GI Informática</b>. Suas respostas ficam registradas no seu nome.</p>
-  <label for="gEmail">E-mail</label><input id="gEmail" type="email" autocomplete="username" placeholder="seu@email.com">
-  <label for="gSenha">Senha</label><input id="gSenha" type="password" autocomplete="current-password" placeholder="Sua senha">
+  <h2 style="margin:8px 0 4px">Entre com o código da turma</h2>
+  <p>Digite o código que o professor passou e o seu nome completo. Suas respostas ficam registradas no seu nome.</p>
+  <label for="gCodigo">Código da turma</label><input id="gCodigo" placeholder="Ex.: GI2026A" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase">
+  <label for="gNome">Seu nome completo</label><input id="gNome" placeholder="Nome e sobrenome" autocomplete="name">
   <input class="hp" id="gSite" name="site" tabindex="-1" autocomplete="off">
   <button type="button" id="btnEntrar">Entrar e começar</button>
   <div class="msg" id="msgGate"></div>
-  <p class="hint" style="margin-top:12px">Ainda não tem conta? <a href="https://www.estudativa.com.br/gi-informatica/" target="_blank" rel="noopener">Cadastre-se no portal</a> com o código da turma que o professor passou e volte aqui.</p>
+  <p class="hint" style="margin-top:12px">Use sempre o mesmo nome para continuar de onde parou. Se o código não funcionar, fale com o professor.</p>
 </div>
 
 <div class="wrap hidden" id="app">
@@ -495,10 +495,10 @@ function verificarLogin(){
   });
 }
 function entrar(){
-  var email=v('gEmail'),senha=$('gSenha').value;
-  if(!email||!senha){msg('msgGate','Digite e-mail e senha.',true);return}
+  var voucher=v('gCodigo'),nome=v('gNome');
+  if(!voucher||nome.length<3){msg('msgGate','Digite o código da turma e o seu nome completo.',true);return}
   $('btnEntrar').disabled=true;
-  api('/api/gi/aluno/login',{method:'POST',body:{email:email,senha:senha,site:$('gSite').value}}).then(function(j){
+  api('/api/gi/aluno/entrar',{method:'POST',body:{voucher:voucher,nome:nome,site:$('gSite').value}}).then(function(j){
     $('btnEntrar').disabled=false;
     if(j&&j.ok){mostrarApp(j)}else{msg('msgGate',(j&&j.error)||'Não foi possível entrar.',true)}
   }).catch(function(){$('btnEntrar').disabled=false;msg('msgGate','Erro de conexão. Tente de novo.',true)});
@@ -532,7 +532,7 @@ function enviar(){
 /* ---------- ligações dos botões ---------- */
 function iniciar(){
   on('btnEntrar','click',entrar);
-  on('gSenha','keydown',function(e){if(e.key==='Enter')entrar()});
+  on('gNome','keydown',function(e){if(e.key==='Enter')entrar()});
   on('btnSair','click',sair);
   on('btnEnviar','click',enviar);
   verificarLogin();
