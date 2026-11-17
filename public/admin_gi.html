@@ -89,13 +89,13 @@
 
     <div id="viewVouchers" class="hidden">
       <h2 style="margin-top:16px">Códigos de turma</h2>
-      <p class="mini">Assim que existir pelo menos um código, <b>ninguém cria conta sem digitar um código válido</b>. Crie um por turma, passe o código no quadro e desative quando a turma terminar o cadastro. Quem já tem conta continua entrando normalmente.</p>
+      <p class="mini">O aluno entra só com o <b>código da turma + o nome completo</b> (sem e-mail e sem senha). Sem um código ativo, ninguém entra. Crie um por turma e passe no quadro. Cada rede (IP) aceita no máximo <b>25 alunos conectados ao mesmo tempo</b>. Desative o código quando a turma terminar.</p>
       <form class="inline" id="formVoucher">
         <label>Nome da turma (aparece no painel e no CSV)</label>
         <input id="vTurma" placeholder="Ex.: GI Informática 2026 — Terça">
         <label>Código (deixe vazio para gerar automaticamente)</label>
         <input id="vCodigo" placeholder="Ex.: GI2026A" style="text-transform:uppercase">
-        <label>Limite de cadastros com este código (0 = sem limite)</label>
+        <label>Limite de alunos com este código (0 = sem limite)</label>
         <input id="vLimite" type="number" value="40" min="0" max="500">
         <label>Validade (opcional)</label>
         <input id="vValidade" type="date">
@@ -413,7 +413,7 @@ async function loadVouchers(){
 }
 function renderVouchers(){
   const el = $('vouchersList');
-  if (!cache.vouchers.length){ el.innerHTML = '<p class="muted">Nenhum código ainda — o cadastro está aberto para qualquer pessoa. Crie o primeiro código para fechar.</p>'; return; }
+  if (!cache.vouchers.length){ el.innerHTML = '<p class="muted">Nenhum código ainda — ninguém consegue entrar. Crie o primeiro código para liberar a turma.</p>'; return; }
   const hoje = new Date().toISOString().slice(0,10);
   el.innerHTML = cache.vouchers.map(v => {
     const vencido = v.validade && v.validade < hoje;
@@ -423,7 +423,7 @@ function renderVouchers(){
     <div class="aluno-row">
       <div>
         <span class="voucher-code">${esc(v.codigo)}</span> ${status}<br>
-        <b>${esc(v.turma)}</b> · <span class="mini">${v.usos||0} cadastro(s)${v.limite_usos ? ' de '+v.limite_usos : ''}${v.validade ? ' · vale até '+esc(v.validade.split('-').reverse().join('/')) : ''}</span>
+        <b>${esc(v.turma)}</b> · <span class="mini">${v.usos||0} aluno(s)${v.limite_usos ? ' de '+v.limite_usos : ''}${v.validade ? ' · vale até '+esc(v.validade.split('-').reverse().join('/')) : ''}</span>
       </div>
       <div>
         <button class="btn secondary small" onclick="copiarTexto('${esc(v.codigo)}')">Copiar</button>
@@ -441,7 +441,7 @@ async function criarVoucher(ev){
   if (!r.ok) return alert(data.error || 'Erro ao criar código.');
   $('vTurma').value=''; $('vCodigo').value='';
   loadVouchers();
-  alert(`Código criado: ${data.codigo}\nPasse esse código para a turma na hora do cadastro.`);
+  alert(`Código criado: ${data.codigo}\nPasse esse código para a turma: o aluno digita o código e o nome completo para entrar.`);
 }
 async function alternarVoucher(id){
   await fetch(`/api/admin/gi/vouchers/${id}/alternar`, {method:'POST'});
