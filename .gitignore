@@ -6,3 +6,5 @@ __pycache__/
 contribuicoes_pendentes.json
 ia_perguntas.json
 jogos_partidas.json
+resultados_partidas.json
+relatorios_curador.json

@@ -1,0 +1,46 @@
+# Robô Curador do Estudativa — relatório semanal.
+#
+# Toda terça às 19h (horário de Brasília = 22h UTC) o GitHub chama o servidor
+# do Render, que gera o relatório e envia por Telegram e e-mail.
+#
+# Configure em GitHub > Settings > Secrets and variables > Actions:
+#   CURADOR_URL    endereço do servidor no Render (ex.: https://batalha-de-historia.onrender.com)
+#   CURADOR_TOKEN  a mesma senha colocada no Render, na variável CURADOR_TOKEN
+#
+# Também dá pra rodar na mão: aba Actions > Robô Curador semanal > Run workflow.
+
+name: Robô Curador semanal
+
+on:
+  schedule:
+    - cron: "0 22 * * 2"
+  workflow_dispatch:
+
+jobs:
+  relatorio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Acordar o servidor do Render
+        run: |
+          # O plano gratuito do Render "dorme" sem uso; o primeiro acesso pode levar ~1 minuto.
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 90 "${{ secrets.CURADOR_URL }}/api/topics" -o /dev/null; then
+              echo "Servidor acordado."; exit 0
+            fi
+            echo "Ainda acordando (tentativa $i)..."; sleep 20
+          done
+          echo "O servidor não respondeu."; exit 1
+
+      - name: Gerar e enviar o relatório
+        run: |
+          for i in 1 2 3; do
+            resposta=$(curl -sS --max-time 180 -w "\n%{http_code}" -X POST \
+              -H "X-Curador-Token: ${{ secrets.CURADOR_TOKEN }}" \
+              "${{ secrets.CURADOR_URL }}/api/curador/rodar") || true
+            codigo=$(echo "$resposta" | tail -n1)
+            echo "$resposta" | head -n -1
+            if [ "$codigo" = "200" ]; then exit 0; fi
+            echo "Tentativa $i falhou (HTTP $codigo)."; sleep 30
+          done
+          exit 1

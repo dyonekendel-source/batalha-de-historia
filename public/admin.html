@@ -55,6 +55,7 @@
       <button class="admin-tab" data-tab="jogos" onclick="selectTab('jogos')">🎮 Jogos criados</button>
       <button class="admin-tab" data-tab="contrib" onclick="selectTab('contrib')">✍️ Perguntas de professores</button>
       <button class="admin-tab" data-tab="mapas" onclick="selectTab('mapas')">🧠 Mapas mentais</button>
+      <button class="admin-tab" data-tab="curador" onclick="selectTab('curador')">🧭 Robô Curador</button>
     </div>
 
     <section class="card" style="padding:24px">
@@ -68,8 +69,8 @@
 const $=id=>document.getElementById(id);
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
-let cache = {ia: null, jogos: null, contrib: null, mapas: null};
-let activeTab = 'ia';
+let cache = {ia: null, jogos: null, contrib: null, mapas: null, curador: [], curadorStatus: null};
+let activeTab = location.hash === '#curador' ? 'curador' : 'ia';
 
 async function checkLogin(){
   const r = await fetch('/api/admin/check');
@@ -117,15 +118,17 @@ async function logout(){
 }
 
 async function loadAll(){
-  const [ia, jogos, contrib, mapas] = await Promise.all([
+  const [ia, jogos, contrib, mapas, curador, curadorStatus] = await Promise.all([
     fetch('/api/admin/ia-perguntas').then(r => r.ok ? r.json() : []),
     fetch('/api/admin/jogos').then(r => r.ok ? r.json() : []),
     fetch('/api/admin/contribuicoes').then(r => r.ok ? r.json() : []),
     fetch('/api/admin/mapas-pendentes').then(r => r.ok ? r.json() : []),
+    fetch('/api/admin/curador/relatorios').then(r => r.ok ? r.json() : []),
+    fetch('/api/admin/curador/status').then(r => r.ok ? r.json() : null),
   ]);
-  cache = {ia, jogos, contrib, mapas};
+  cache = {ia, jogos, contrib, mapas, curador, curadorStatus};
   renderStats();
-  renderTab();
+  selectTab(activeTab);
 }
 
 function renderStats(){
@@ -147,6 +150,7 @@ function selectTab(tab){
 
 function renderTab(){
   const el = $('content');
+  if (activeTab === 'curador') { renderCurador(el); return; }
   if (activeTab === 'ia') {
     if (!cache.ia.length) { el.innerHTML = '<p class="muted">Nenhuma pergunta registrada ainda.</p>'; return; }
     el.innerHTML = cache.ia.map(item => `
@@ -206,6 +210,118 @@ function renderTab(){
       }
     });
   }
+}
+
+// ---------------------------------------------------------------- Robô Curador
+const EMOJI_TIPO = {'quiz':'🎯','mapa mental':'🧠','vídeo curto':'🎬','video curto':'🎬','jogo':'🎮','resumo ativo':'📘','revisão':'🔁','revisao':'🔁'};
+
+function curadorStatusHtml(){
+  const s = cache.curadorStatus;
+  if (!s) return '';
+  const item = (ok, txt, dica) => `<div style="margin:4px 0">${ok ? '✅' : '⬜'} ${esc(txt)}${ok ? '' : ` <small class="muted">— ${esc(dica)}</small>`}</div>`;
+  return `
+    <div class="admin-item">
+      <div class="pergunta">⚙️ Configuração</div>
+      ${item(s.groq, 'Estudativa IA (Groq)', 'sem ela o robô usa sugestões por regras')}
+      ${item(s.agendador, 'Agendamento de terça 19h (CURADOR_TOKEN)', 'configure no Render e no GitHub')}
+      ${item(s.telegram_bot, 'Bot do Telegram (TELEGRAM_BOT_TOKEN)', 'crie com o @BotFather')}
+      ${item(s.telegram_chat, 'Seu chat do Telegram (TELEGRAM_CHAT_ID)', 'use o botão “Descobrir meu chat ID”')}
+      ${item(s.email_resend, 'Envio de e-mail (RESEND_API_KEY)', 'crie a chave em resend.com')}
+      ${item(s.email_para, 'E-mail de destino (CURADOR_EMAIL_PARA)', 'o e-mail que recebe o relatório')}
+      ${item(s.firestore, 'Histórico permanente (Firestore)', 'sem ele, os dados somem a cada redeploy do Render')}
+      <div id="chatIdBox" class="resposta" style="margin-top:8px"></div>
+    </div>`;
+}
+
+function curadorRelatorioHtml(r, aberto){
+  const n = r.numeros || {};
+  const p = r.periodo || {};
+  const sug = (r.sugestoes || []).map((s, i) => `
+    <li style="margin-bottom:10px">
+      <b style="color:var(--text)">${EMOJI_TIPO[(s.tipo||'').toLowerCase()] || '💡'} ${esc(s.titulo)}</b>
+      ${String(s.prioridade||'').toLowerCase()==='alta' ? '<span class="tag alerta">prioridade alta</span>' : `<span class="tag">${esc(s.prioridade||'')}</span>`}
+      <br><small>${esc(s.tipo)} · ${esc(s.tema)}${String(s.origem||'').toLowerCase()==='google' ? ' · 🔎 tendência do Google' : ''}</small>
+      <br><b>Por quê:</b> ${esc(s.motivo)}
+      <br><b>Ideia:</b> ${esc(s.ideia)}
+    </li>`).join('');
+  const dif = (r.questoes_dificeis || []).slice(0, 6).map(q => `<li>${esc(q.pergunta)} <small>(${esc(q.tema)})</small> — <b style="color:#ff7a7f">${q.acerto_pct}%</b></li>`).join('');
+  const temasIa = (r.temas_ia || []).map(t => `<li>${esc(t.tema)} (${esc(t.vezes)}x)</li>`).join('');
+  const ganchos = (r.ganchos_google || []).map(g => `<li><b style="color:var(--text)">${esc(g.tendencia)}</b> → ${esc(g.conexao)}</li>`).join('');
+  const buscas = (r.buscas_destaque || []).map(b => `<span class="tag">${esc(b)}</span>`).join(' ');
+  const tend = r.tendencias || {};
+  const emAlta = (tend.em_alta_brasil || []).slice(0, 12).map(t => `<span class="tag">${esc(t.termo)}${t.buscas ? ' · ' + esc(t.buscas) : ''}</span>`).join(' ');
+  const googleHtml = (ganchos || buscas || emAlta || (tend.erros || []).length) ? `
+        <h3 style="margin:14px 0 6px;color:var(--text)">🔎 Em alta no Google</h3>
+        ${ganchos ? `<ul style="padding-left:20px">${ganchos}</ul>` : '<p>Nenhum gancho com História entre os assuntos em alta desta semana.</p>'}
+        ${buscas ? `<p><b>Buscas que merecem conteúdo:</b><br>${buscas}</p>` : ''}
+        ${emAlta ? `<details><summary style="cursor:pointer">Ver tudo o que está em alta no Brasil</summary><p>${emAlta}</p></details>` : ''}
+        ${(tend.erros || []).length ? `<p style="color:#ffb86b"><small>⚠️ ${tend.erros.map(esc).join(' | ')}</small></p>` : ''}` : '';
+  const envio = r.envio || {};
+  const envioTxt = Object.keys(envio).length
+    ? Object.entries(envio).map(([k, v]) => v.ok ? `<span class="tag">✅ ${esc(k)}</span>` : `<span class="tag alerta" title="${esc(v.erro)}">✖ ${esc(k)}</span>`).join('')
+    : '<span class="tag">prévia (não enviado)</span>';
+  return `
+    <details class="admin-item" ${aberto ? 'open' : ''}>
+      <summary style="cursor:pointer">
+        <span class="pergunta">🧭 Semana de ${esc(p.inicio)} a ${esc(p.fim)}</span>
+        <span class="meta" style="display:block">${esc(r.criadoEm)} · ${r.origem === 'agendado' ? 'agendado' : 'manual'} · ${r.fonte === 'ia' ? 'sugestões da IA' : 'sugestões por regras'} ${envioTxt}</span>
+      </summary>
+      <div class="resposta" style="white-space:normal;margin-top:10px">
+        <p>${esc(r.resumo)}</p>
+        <p>🎮 ${n.partidas ?? 0} partidas (semana anterior: ${n.partidas_semana_anterior ?? 0}) · ✍️ ${n.respostas_de_alunos ?? 0} respostas de alunos · ✅ acerto médio ${n.acerto_medio_pct ?? '—'}% · 🤖 ${n.perguntas_ia ?? 0} perguntas à IA</p>
+        <h3 style="margin:14px 0 6px;color:var(--text)">💡 Sugestões</h3>
+        <ol style="padding-left:20px">${sug || '<li>Sem sugestões.</li>'}</ol>
+        ${googleHtml}
+        ${dif ? `<h3 style="margin:14px 0 6px;color:var(--text)">❗ Questões com mais erros</h3><ul style="padding-left:20px">${dif}</ul>` : ''}
+        ${temasIa ? `<h3 style="margin:14px 0 6px;color:var(--text)">🤖 O que perguntaram à IA</h3><ul style="padding-left:20px">${temasIa}</ul>` : ''}
+        ${Object.values(envio).some(v => !v.ok) ? `<p style="color:#ff7a7f">Erros no envio: ${Object.entries(envio).filter(([k,v]) => !v.ok).map(([k,v]) => esc(k + ': ' + v.erro)).join(' | ')}</p>` : ''}
+      </div>
+    </details>`;
+}
+
+function renderCurador(el){
+  el.innerHTML = `
+    <p class="muted" style="margin-top:0">Toda <b>terça às 19h</b> o robô analisa a semana e manda as sugestões no Telegram e no e-mail. Aqui você vê o histórico e pode gerar um relatório na hora.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <button class="btn primary" id="btnCurPrev" onclick="curadorGerar(false)">👀 Gerar prévia (sem enviar)</button>
+      <button class="btn secondary" id="btnCurEnv" onclick="curadorGerar(true)">📨 Gerar e enviar agora</button>
+      <button class="btn secondary" onclick="curadorChatId()">🔎 Descobrir meu chat ID do Telegram</button>
+    </div>
+    <div id="curMsg" class="muted" style="min-height:18px;margin-bottom:10px"></div>
+    ${curadorStatusHtml()}
+    ${(cache.curador || []).length ? cache.curador.map((r, i) => curadorRelatorioHtml(r, i === 0)).join('') : '<p class="muted">Nenhum relatório ainda. Clique em “Gerar prévia” para ver o primeiro.</p>'}
+  `;
+}
+
+async function curadorGerar(enviar){
+  if (enviar && !confirm('Gerar o relatório agora e enviar pelo Telegram e e-mail?')) return;
+  $('curMsg').textContent = '⏳ O robô está analisando os dados... (pode levar até 1 minuto)';
+  $('btnCurPrev').disabled = $('btnCurEnv').disabled = true;
+  try {
+    const r = await fetch('/api/admin/curador/gerar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enviar})});
+    const data = await r.json();
+    if (!r.ok) { $('curMsg').textContent = data.error || data.detail || 'Não foi possível gerar.'; return; }
+    cache.curador = [data, ...(cache.curador || [])];
+    renderCurador($('content'));
+    $('curMsg').textContent = enviar ? '✅ Relatório gerado. Confira os selos de envio abaixo.' : '✅ Prévia gerada (nada foi enviado).';
+  } catch (e) {
+    $('curMsg').textContent = 'Erro ao conectar com o servidor.';
+  } finally {
+    const a = $('btnCurPrev'), b = $('btnCurEnv');
+    if (a) a.disabled = false; if (b) b.disabled = false;
+  }
+}
+
+async function curadorChatId(){
+  const box = $('chatIdBox');
+  if (box) box.textContent = '⏳ Consultando o Telegram...';
+  try {
+    const data = await fetch('/api/admin/curador/telegram-chats').then(r => r.json());
+    if (!data.ok) { box.textContent = data.erro || 'Não foi possível consultar.'; return; }
+    if (!data.chats.length) { box.innerHTML = 'Nenhuma conversa encontrada. Abra o seu bot no Telegram, envie <b>/start</b> e clique de novo neste botão.'; return; }
+    box.innerHTML = 'Copie o número abaixo para a variável <b>TELEGRAM_CHAT_ID</b> no Render:<br>' +
+      data.chats.map(c => `<code style="font-size:16px">${esc(c.chat_id)}</code> ${esc(c.nome)}`).join('<br>');
+  } catch (e) { box.textContent = 'Erro ao conectar com o servidor.'; }
 }
 
 function toggleEditarMapa(id){
